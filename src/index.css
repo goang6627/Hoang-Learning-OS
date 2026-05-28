@@ -1,0 +1,199 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  min-width: 320px;
+  margin: 0;
+  background:
+    radial-gradient(circle at top left, rgb(34 211 238 / 0.12), transparent 32rem),
+    radial-gradient(circle at bottom right, rgb(20 184 166 / 0.08), transparent 30rem),
+    #09090b;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+button,
+a,
+.field {
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease,
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+
+button:active {
+  transform: translateY(1px);
+}
+
+.field {
+  width: 100%;
+  border-radius: 0.5rem;
+  border: 1px solid rgb(63 63 70);
+  background: rgb(9 9 11);
+  padding: 0.625rem 0.75rem;
+  color: white;
+  outline: none;
+}
+
+.field:hover {
+  border-color: rgb(82 82 91);
+}
+
+.field:focus {
+  border-color: rgb(34 211 238);
+  box-shadow: 0 0 0 3px rgb(34 211 238 / 0.14);
+}
+
+.field-with-left-icon {
+  padding-left: 2.25rem;
+}
+
+.btn-primary {
+  display: inline-flex;
+  min-height: 2.5rem;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 0.5rem;
+  background: rgb(34 211 238);
+  box-shadow: 0 0 24px rgb(34 211 238 / 0.14);
+  padding: 0.625rem 0.875rem;
+  font-weight: 700;
+  color: rgb(9 9 11);
+}
+
+.btn-primary:hover {
+  background: rgb(103 232 249);
+  box-shadow: 0 0 32px rgb(34 211 238 / 0.22);
+}
+
+.icon-btn {
+  display: inline-grid;
+  height: 2.25rem;
+  width: 2.25rem;
+  place-items: center;
+  border-radius: 0.5rem;
+  border: 1px solid rgb(63 63 70);
+  background: rgb(24 24 27);
+  color: rgb(212 212 216);
+}
+
+.icon-btn:hover {
+  border-color: rgb(34 211 238 / 0.65);
+  color: white;
+}
+
+.chip {
+  display: inline-flex;
+  min-height: 2.25rem;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgb(63 63 70);
+  background: rgb(24 24 27);
+  padding: 0.45rem 0.7rem;
+  font-size: 0.875rem;
+  color: rgb(212 212 216);
+}
+
+.chip:hover {
+  border-color: rgb(34 211 238 / 0.65);
+  background: rgb(39 39 42);
+  color: white;
+}
+
+.chip-active {
+  border-color: rgb(34 211 238);
+  background: rgb(34 211 238);
+  color: rgb(9 9 11);
+  font-weight: 700;
+}
+
+.app-shell {
+  background:
+    linear-gradient(135deg, rgb(34 211 238 / 0.06), transparent 28rem),
+    linear-gradient(315deg, rgb(20 184 166 / 0.05), transparent 26rem),
+    rgb(9 9 11);
+}
+
+.glass-panel {
+  background:
+    linear-gradient(180deg, rgb(39 39 42 / 0.72), rgb(24 24 27 / 0.54));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04), 0 18px 45px rgb(0 0 0 / 0.18);
+}
+
+.surface-card {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035), 0 12px 34px rgb(0 0 0 / 0.16);
+}
+
+.interactive-card {
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.interactive-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 42px rgb(0 0 0 / 0.28);
+}
+
+.scroll-area {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(63 63 70) transparent;
+}
+
+.scroll-area::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+
+.scroll-area::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgb(63 63 70);
+  background-clip: padding-box;
+}
+
+.scroll-area::-webkit-scrollbar-thumb:hover {
+  background: rgb(82 82 91);
+  background-clip: padding-box;
+}
