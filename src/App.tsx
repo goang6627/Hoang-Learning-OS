@@ -343,7 +343,6 @@ const STORAGE_KEYS = {
 
 const subjectTags: SubjectTag[] = ['GPA', 'CP', 'CS', 'SE', 'AI', 'FRONTEND', 'BACKEND', 'DATABASE', 'SYSTEMS', 'NETWORKING', 'MATH', 'CAREER', 'RESEARCH', 'ENGLISH']
 const completionStatuses: Array<CompletionStatus | 'all'> = ['all', 'not_started', 'planned', 'studying', 'completed', 'retaking', 'improving']
-const riskLevels: Array<RiskLevel | 'all'> = ['all', 'none', 'low', 'watch', 'high', 'critical']
 const importanceLevels: Array<ImportanceLevel | 'all'> = ['all', 'low', 'medium', 'high', 'critical']
 const cpPlatforms: CpProblem['platform'][] = ['Codeforces', 'VNOJ', 'LeetCode', 'Kattis', 'Other']
 const cpTopics: CpProblem['topic'][] = ['implementation', 'math', 'greedy', 'dp', 'graph', 'data_structure', 'string']
@@ -708,6 +707,10 @@ function App() {
     setData({ ...data, semesterPlans })
     notify('Semester Planner updated')
   }
+  const updateAcademicPlan = (semesterPlans: SemesterPlan[], curriculumSubjects: CurriculumSubject[]) => {
+    setData({ ...data, semesterPlans, curriculumSubjects })
+    notify('Lộ trình đã cập nhật')
+  }
   const saveWeeklyReview = (review: WeeklyReview) => {
     const exists = data.weeklyReviews.some((item) => item.id === review.id)
     setData({
@@ -825,13 +828,13 @@ function App() {
 
           <section className="scroll-area min-h-0 flex-1 overflow-y-auto px-4 py-6 pb-40 md:px-8 lg:pb-32">
             {activePage === 'dashboard' && <DailyWorkflowPage data={data} stats={stats} onUpdateTasks={updateTasks} onSaveDailyReview={saveDailyReview} onStartFocus={setFocusTarget} onOpenSubject={openSubject} />}
-            {activePage === 'learningPath' && <LearningPathWorkflowPage data={data} stats={stats} onUpdateSemesterPlans={updateSemesterPlans} onUpdateTasks={updateTasks} onSaveReview={saveWeeklyReview} onOpenSubject={openSubject} />}
+            {activePage === 'learningPath' && <LearningPathWorkflowPage data={data} stats={stats} onUpdateSemesterPlans={updateSemesterPlans} onUpdateAcademicPlan={updateAcademicPlan} onUpdateTasks={updateTasks} onSaveReview={saveWeeklyReview} onOpenSubject={openSubject} />}
             {activePage === 'exams' && <ExamSchedulePage data={data} onOpenSubject={openSubject} />}
             {activePage === 'study' && <SimpleStudyPlanPage data={data} onUpdateTasks={updateTasks} onStartFocus={setFocusTarget} onOpenSubject={openSubject} />}
             {activePage === 'gpa' && <SimpleGpaPage data={data} stats={stats} onOpenSubject={openSubject} />}
             {activePage === 'roadmap' && <CurriculumRoadmap data={data} stats={stats} onUpdateTasks={updateTasks} onOpenSubject={openSubject} />}
             {activePage === 'recovery' && <GpaRecoveryMap data={data} stats={stats} onOpenSubject={openSubject} />}
-            {activePage === 'semester' && <EditableSemesterPlanner data={data} onUpdateSemesterPlans={updateSemesterPlans} onUpdateTasks={updateTasks} onOpenSubject={openSubject} />}
+            {activePage === 'semester' && <EditableSemesterPlanner data={data} onUpdateSemesterPlans={updateSemesterPlans} onUpdateAcademicPlan={updateAcademicPlan} onUpdateTasks={updateTasks} onOpenSubject={openSubject} />}
             {activePage === 'weekly' && <WeeklyReviewPage data={data} onSaveReview={saveWeeklyReview} />}
             {activePage === 'settings' && <SettingsPage data={data} onUpdateProfile={updateProfile} onUpdateSettings={updateSettings} onReplaceData={replaceData} onResetData={resetData} />}
             {activePage === 'daily' && <DailyPlanner data={data} onUpdateTasks={updateTasks} onUpdateStudySessions={updateStudySessions} onUpdateStudyBlocks={updateWeeklyStudyBlocks} onUpdateDailyExecution={updateDailyExecution} onStartFocus={setFocusTarget} onOpenSubject={openSubject} />}
@@ -894,7 +897,7 @@ function getWorkflowHint(page: Page) {
     return { title: 'Project', description: 'Theo dõi mốc tiến độ, hành động tiếp theo và biến project thành việc cụ thể.' }
   }
   if (page === 'learningPath') {
-    return { title: 'Lộ trình học tập', description: 'Nhìn toàn cảnh tín chỉ, học kỳ, môn rủi ro và điều chỉnh dài hạn.' }
+    return { title: 'Lộ trình học tập', description: 'Nhìn toàn cảnh tín chỉ, học kỳ, bảng điểm và điều chỉnh dài hạn.' }
   }
   if (page === 'settings') {
     return { title: 'Dữ liệu & hồ sơ', description: 'Backup, import, reset dữ liệu và chỉnh thông tin mục tiêu.' }
@@ -1185,7 +1188,7 @@ function SubjectDetailDrawer({
   const subject = subjectCode ? data.curriculumSubjects.find((item) => item.code === subjectCode) : undefined
   if (!subject) return null
 
-  const semesterPlan = data.semesterPlans[0]
+  const semesterPlan = getSubjectSemesterPlan(data, subject.code) ?? getActiveSemesterPlan(data)
   const semesterSubjectPlan = semesterPlan.subjectPlans.find((item) => item.subjectCode === subject.code)
   const subjectTasks = data.dailyTasks.filter((task) => task.subjectCode === subject.code)
   const subjectResources = data.resources.filter((resource) => resource.subjectCode === subject.code)
@@ -1196,8 +1199,8 @@ function SubjectDetailDrawer({
   const cpItems = subject.tags.includes('CP') ? data.cpProblems.filter((problem) => problem.status !== 'solved').slice(0, 5) : []
 
   const updateSemesterSubjectStatus = (status: SemesterSubjectPlan['status']) => {
-    const nextPlans = data.semesterPlans.map((plan, index) => {
-      if (index !== 0) return plan
+    const nextPlans = data.semesterPlans.map((plan) => {
+      if (plan.semester !== semesterPlan.semester) return plan
       const hasSubject = plan.subjectPlans.some((item) => item.subjectCode === subject.code)
       const subjectPlans = hasSubject
         ? plan.subjectPlans.map((item) => (item.subjectCode === subject.code ? { ...item, status } : item))
@@ -1475,7 +1478,7 @@ function getDefaultData(): AppData {
 function Dashboard({ data, stats, onUpdateTasks, onOpenSubject }: { data: AppData; stats: ReturnType<typeof getStats>; onUpdateTasks: (tasks: DailyTask[]) => void; onOpenSubject: (subjectCode: string) => void }) {
   const profile = data.academicProfile
   const recoverySubjects = data.curriculumSubjects.filter((subject) => subject.recoveryAction !== 'none')
-  const semesterPlan = data.semesterPlans[0]
+  const semesterPlan = getActiveSemesterPlan(data)
   const semesterSubjects = semesterPlan.subjects
     .map((code) => data.curriculumSubjects.find((subject) => subject.code === code))
     .filter((subject): subject is CurriculumSubject => Boolean(subject))
@@ -2171,7 +2174,7 @@ function SimpleStudyPlanPage({
 
 function SimpleGpaPage({ data, stats, onOpenSubject }: { data: AppData; stats: ReturnType<typeof getStats>; onOpenSubject: (subjectCode: string) => void }) {
   const completedSubjects = data.curriculumSubjects.filter((subject) => subject.completionStatus === 'completed')
-  const currentSemester = data.semesterPlans[0]
+  const currentSemester = getActiveSemesterPlan(data)
   const currentSubjects = currentSemester.subjects
     .map((code) => data.curriculumSubjects.find((subject) => subject.code === code))
     .filter((subject): subject is CurriculumSubject => Boolean(subject))
@@ -2228,6 +2231,7 @@ function LearningPathWorkflowPage({
   data,
   stats,
   onUpdateSemesterPlans,
+  onUpdateAcademicPlan,
   onUpdateTasks,
   onSaveReview,
   onOpenSubject,
@@ -2235,16 +2239,17 @@ function LearningPathWorkflowPage({
   data: AppData
   stats: ReturnType<typeof getStats>
   onUpdateSemesterPlans: (plans: SemesterPlan[]) => void
+  onUpdateAcademicPlan: (plans: SemesterPlan[], subjects: CurriculumSubject[]) => void
   onUpdateTasks: (tasks: DailyTask[]) => void
   onSaveReview: (review: WeeklyReview) => void
   onOpenSubject: (subjectCode: string) => void
 }) {
-  const [section, setSection] = useState<'overview' | 'curriculum' | 'semester' | 'risk' | 'review'>('overview')
+  const [section, setSection] = useState<'overview' | 'curriculum' | 'semester' | 'gradebook' | 'review'>('overview')
   const sections = [
     { id: 'overview', label: 'Tổng quan' },
     { id: 'curriculum', label: 'Chương trình' },
     { id: 'semester', label: 'Học kỳ' },
-    { id: 'risk', label: 'Rủi ro' },
+    { id: 'gradebook', label: 'Bảng điểm' },
     { id: 'review', label: 'Review' },
   ] as const
 
@@ -2260,8 +2265,8 @@ function LearningPathWorkflowPage({
 
       {section === 'overview' && <LearningPathOverview data={data} stats={stats} onUpdateTasks={onUpdateTasks} onOpenSubject={onOpenSubject} />}
       {section === 'curriculum' && <CurriculumRoadmap data={data} stats={stats} onUpdateTasks={onUpdateTasks} onOpenSubject={onOpenSubject} />}
-      {section === 'semester' && <EditableSemesterPlanner data={data} onUpdateSemesterPlans={onUpdateSemesterPlans} onUpdateTasks={onUpdateTasks} onOpenSubject={onOpenSubject} />}
-      {section === 'risk' && <LearningPathRiskPage data={data} stats={stats} onUpdateTasks={onUpdateTasks} onOpenSubject={onOpenSubject} />}
+      {section === 'semester' && <EditableSemesterPlanner data={data} onUpdateSemesterPlans={onUpdateSemesterPlans} onUpdateAcademicPlan={onUpdateAcademicPlan} onUpdateTasks={onUpdateTasks} onOpenSubject={onOpenSubject} />}
+      {section === 'gradebook' && <LearningPathGradebookPage data={data} stats={stats} onOpenSubject={onOpenSubject} />}
       {section === 'review' && <WeeklyReviewPage data={data} onSaveReview={onSaveReview} />}
     </div>
   )
@@ -2278,18 +2283,16 @@ function LearningPathOverview({
   onUpdateTasks: (tasks: DailyTask[]) => void
   onOpenSubject: (subjectCode: string) => void
 }) {
-  const semesterPlan = data.semesterPlans[0]
+  const semesterPlan = getActiveSemesterPlan(data)
   const semesterSubjects = semesterPlan.subjects
     .map((code) => data.curriculumSubjects.find((subject) => subject.code === code))
     .filter((subject): subject is CurriculumSubject => Boolean(subject))
   const projectedSemesterGPA = calculateProjectedSemesterGPA(semesterSubjects, semesterPlan.subjectPlans)
-  const riskSubjects = data.curriculumSubjects
-    .filter((subject) => ['watch', 'high', 'critical'].includes(subject.riskLevel) || subject.recoveryAction !== 'none')
-    .sort((a, b) => getPriorityScore(b) - getPriorityScore(a))
+  const gpaAttentionSubjects = getCompletedGradeAttentionSubjects(data)
   const selectedGroupNames = data.requirementGroups
     .filter((group) => data.academicProfile.selectedSpecializationGroupIds.includes(group.id))
     .map((group) => group.name)
-  const activitySignals = getSubjectReviewSignals(data, uniqueSubjects([...semesterSubjects, ...riskSubjects]))
+  const activitySignals = getSubjectReviewSignals(data, semesterSubjects)
 
   const addSubjectTask = (subject: CurriculumSubject) => {
     onUpdateTasks(addUniqueDailyTask(data.dailyTasks, {
@@ -2312,7 +2315,7 @@ function LearningPathOverview({
               <Badge>{selectedGroupNames[0] ?? 'Chưa chọn chuyên ngành'}</Badge>
             </div>
             <h2 className="mt-4 text-2xl font-semibold text-white">Toàn cảnh chương trình học</h2>
-            <p className="mt-2 max-w-2xl text-sm text-zinc-400">Theo dõi tiến độ tốt nghiệp, học kỳ hiện tại, môn rủi ro và các điều chỉnh dài hạn ở một nơi.</p>
+            <p className="mt-2 max-w-2xl text-sm text-zinc-400">Theo dõi tiến độ tốt nghiệp, học kỳ hiện tại, lịch sử GPA và các điều chỉnh dài hạn ở một nơi.</p>
           </div>
         </div>
       </section>
@@ -2321,7 +2324,7 @@ function LearningPathOverview({
         <MetricCard icon={BookOpen} label="Tiến độ tốt nghiệp" value={`${stats.completedCredits}/${data.academicProfile.minimumRequiredCredits}`} helper={`${stats.creditProgress.percent}% tối thiểu`} />
         <MetricCard icon={GraduationCap} label="GPA hiện tại" value={stats.currentGPA.toFixed(2)} helper={`Hệ 10: ${data.academicProfile.cumulativeGPA10?.toFixed(2) ?? '6.99'}`} />
         <MetricCard icon={Target} label="Dự phóng kỳ này" value={projectedSemesterGPA.toFixed(2)} helper={`target ${semesterPlan.targetSemesterGPA4.toFixed(2)}`} />
-        <MetricCard icon={AlertTriangle} label="Môn cần chú ý" value={riskSubjects.length} helper="risk/recovery/action" />
+        <MetricCard icon={AlertTriangle} label="GPA cần lưu ý" value={gpaAttentionSubjects.length} helper="đã thi, chỉ học lại/cải thiện" />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
@@ -2345,19 +2348,20 @@ function LearningPathOverview({
           </div>
         </Panel>
 
-        <Panel title="Rủi ro ưu tiên" subtitle="Bấm để đưa vào task hôm nay">
+        <Panel title="Lịch sử GPA cần lưu ý" subtitle="Các môn đã thi rồi; muốn sửa điểm thì đi theo hướng học lại/cải thiện">
           <div className="grid gap-3">
-            {riskSubjects.slice(0, 5).map((subject) => (
-              <button key={subject.code} type="button" className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-left hover:border-amber-300" onClick={() => addSubjectTask(subject)}>
+            {gpaAttentionSubjects.slice(0, 5).map((subject) => (
+              <button key={subject.code} type="button" className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-left hover:border-amber-300" onClick={() => onOpenSubject(subject.code)}>
                 <div className="flex flex-wrap gap-2">
-                  <Badge tone={riskTone(subject.riskLevel)}>{subject.riskLevel}</Badge>
                   <Badge>{subject.code}</Badge>
-                  <Badge>{subject.recoveryAction}</Badge>
+                  <Badge>{subject.grade?.letter}</Badge>
+                  <Badge tone="warning">Có thể học lại/cải thiện</Badge>
                 </div>
                 <p className="mt-2 font-medium text-white">{subject.name}</p>
-                {subject.notes && <p className="mt-1 text-sm text-amber-100">{subject.notes}</p>}
+                <p className="mt-1 text-sm text-amber-100">Điểm: {subject.grade?.score10}/10 · hệ 4: {subject.grade?.point4}/4</p>
               </button>
             ))}
+            {!gpaAttentionSubjects.length && <EmptyState text="Chưa có môn đã thi nào cần lưu ý về GPA." />}
           </div>
         </Panel>
       </div>
@@ -2407,59 +2411,54 @@ function LearningPathOverview({
   )
 }
 
-function LearningPathRiskPage({
-  data,
-  stats,
-  onUpdateTasks,
-  onOpenSubject,
-}: {
-  data: AppData
-  stats: ReturnType<typeof getStats>
-  onUpdateTasks: (tasks: DailyTask[]) => void
-  onOpenSubject: (subjectCode: string) => void
-}) {
-  const recoverySubjects = data.curriculumSubjects
-    .filter((subject) => ['critical', 'high', 'watch'].includes(subject.riskLevel) || subject.recoveryAction !== 'none')
-    .sort((a, b) => getPriorityScore(b) - getPriorityScore(a))
-
-  const addSubjectTask = (subject: CurriculumSubject) => {
-    onUpdateTasks(addUniqueDailyTask(data.dailyTasks, {
-      title: `Rủi ro: ${subject.code} - ${subject.name}`,
-      lane: subject.tags.includes('CP') ? 'CP' : subject.tags.includes('SE') || subject.tags.includes('CS') ? 'CS_SE' : 'GPA',
-      subjectCode: subject.code,
-      source: 'roadmap',
-      dueDate: today,
-    }))
-  }
+function LearningPathGradebookPage({ data, stats, onOpenSubject }: { data: AppData; stats: ReturnType<typeof getStats>; onOpenSubject: (subjectCode: string) => void }) {
+  const completedSubjects = data.curriculumSubjects
+    .filter((subject) => subject.completionStatus === 'completed' && subject.grade)
+    .sort((a, b) => a.expectedSemester - b.expectedSemester || a.code.localeCompare(b.code))
+  const attentionSubjects = completedSubjects.filter((subject) => ['C', 'D', 'F'].includes(String(subject.grade?.letter ?? '')) || (subject.grade?.point4 ?? 4) < 2.5)
 
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard icon={GraduationCap} label="GPA hiện tại" value={stats.currentGPA.toFixed(2)} helper="tích lũy hệ 4" />
-        <MetricCard icon={AlertTriangle} label="Môn rủi ro" value={recoverySubjects.length} helper="watch/high/critical" />
-        <MetricCard icon={BarChart3} label="Tín chỉ đã có điểm" value={stats.completedCredits} helper="Học kỳ 1 đã hoàn thành" />
+        <MetricCard icon={BarChart3} label="Tín chỉ đã có điểm" value={stats.completedCredits} helper="không tính môn đang học" />
+        <MetricCard icon={AlertTriangle} label="Có thể cải thiện" value={attentionSubjects.length} helper="điểm C/D/F hoặc dưới 2.5" />
         <MetricCard icon={Target} label="Target ngắn hạn" value={data.academicProfile.targetShortTermGPA4.toFixed(2)} helper="GPA tích lũy" />
       </div>
 
-      <Panel title="Bảng rủi ro học tập" subtitle="Môn kéo GPA hoặc nền tảng xuống, có thể biến thành task hôm nay">
+      <Panel title="Lịch sử GPA cần lưu ý" subtitle="Các môn đã thi rồi; nếu muốn sửa điểm thì quản lý theo hướng học lại/cải thiện, không đưa vào workflow hằng ngày">
         <div className="grid gap-4 lg:grid-cols-3">
-          {recoverySubjects.map((subject) => (
+          {attentionSubjects.map((subject) => (
             <article key={subject.code} className="rounded-lg border border-zinc-800 bg-zinc-950 p-4">
               <div className="flex flex-wrap gap-2">
-                <Badge tone={riskTone(subject.riskLevel)}>{subject.riskLevel}</Badge>
-                <Badge>{subject.recoveryAction}</Badge>
                 <Badge>{subject.code}</Badge>
+                <Badge>{subject.credits} TC</Badge>
+                <Badge tone={subject.grade?.letter === 'D' || subject.grade?.letter === 'F' ? 'danger' : 'warning'}>{subject.grade?.letter}</Badge>
+                <Badge tone="warning">Có thể học lại/cải thiện</Badge>
               </div>
               <button type="button" className="mt-3 text-left font-semibold text-white hover:text-cyan-200" onClick={() => onOpenSubject(subject.code)}>
                 {subject.name}
               </button>
-              {subject.grade && <p className="mt-2 text-sm text-zinc-300">Điểm: {subject.grade.score10}/10 · {subject.grade.letter} · {subject.grade.point4}/4</p>}
+              {subject.grade && <p className="mt-2 text-sm text-zinc-300">Điểm: {subject.grade.score10}/10 · hệ 4: {subject.grade.point4}/4</p>}
               {subject.notes && <p className="mt-2 text-sm text-zinc-400">{subject.notes}</p>}
-              <button type="button" className="btn-primary mt-4" onClick={() => addSubjectTask(subject)}>
-                <Plus className="h-4 w-4" />
-                Đưa vào hôm nay
-              </button>
             </article>
+          ))}
+          {!attentionSubjects.length && <EmptyState text="Chưa có môn đã thi nào cần lưu ý về GPA." />}
+        </div>
+      </Panel>
+
+      <Panel title="Bảng điểm đã có" subtitle="Lịch sử điểm thật đang được dùng để tính GPA tích lũy">
+        <div className="grid gap-4 lg:grid-cols-3">
+          {completedSubjects.map((subject) => (
+            <button key={subject.code} type="button" className="rounded-lg border border-zinc-800 bg-zinc-950 p-4 text-left hover:border-cyan-400/60" onClick={() => onOpenSubject(subject.code)}>
+              <div className="flex flex-wrap gap-2">
+                <Badge>{subject.code}</Badge>
+                <Badge>{subject.credits} TC</Badge>
+                <Badge tone={subject.grade?.letter === 'A' ? 'success' : subject.grade?.letter === 'D' || subject.grade?.letter === 'F' ? 'danger' : 'warning'}>{subject.grade?.letter}</Badge>
+              </div>
+              <p className="mt-3 font-semibold text-white">{subject.name}</p>
+              <p className="mt-2 text-sm text-zinc-300">Tổng: {subject.grade?.score10}/10 · hệ 4: {subject.grade?.point4}/4</p>
+            </button>
           ))}
         </div>
       </Panel>
@@ -2471,16 +2470,14 @@ function CurriculumRoadmap({ data, stats, onUpdateTasks, onOpenSubject }: { data
   const [semester, setSemester] = useState('all')
   const [groupId, setGroupId] = useState('all')
   const [completionStatus, setCompletionStatus] = useState<CompletionStatus | 'all'>('all')
-  const [riskLevel, setRiskLevel] = useState<RiskLevel | 'all'>('all')
   const [importance, setImportance] = useState<ImportanceLevel | 'all'>('all')
   const [tag, setTag] = useState<SubjectTag | 'all'>('all')
   const [requiredOnly, setRequiredOnly] = useState('all')
 
   const filteredSubjects = data.curriculumSubjects
-    .filter((subject) => semester === 'all' || String(subject.expectedSemester) === semester)
+    .filter((subject) => semester === 'all' || getSubjectTimelineSemester(data, subject.code) === Number(semester))
     .filter((subject) => groupId === 'all' || subject.groupId === groupId)
     .filter((subject) => completionStatus === 'all' || subject.completionStatus === completionStatus)
-    .filter((subject) => riskLevel === 'all' || subject.riskLevel === riskLevel)
     .filter((subject) => importance === 'all' || subject.importance === importance)
     .filter((subject) => tag === 'all' || subject.tags.includes(tag))
     .filter((subject) => requiredOnly === 'all' || (requiredOnly === 'required' ? subject.required : !subject.required))
@@ -2550,19 +2547,19 @@ function CurriculumRoadmap({ data, stats, onUpdateTasks, onOpenSubject }: { data
         </div>
       </Panel>
 
-      <Panel title="Semester Timeline" subtitle="Học kỳ 1 đến học kỳ 8">
+      <Panel title="Semester Timeline" subtitle="Học kỳ 1 đến học kỳ 8, tự cập nhật theo kế hoạch học kỳ">
         <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-8">
           {Array.from({ length: 8 }, (_, index) => {
             const term = index + 1
-            const subjects = data.curriculumSubjects.filter((subject) => subject.expectedSemester === term)
+            const subjects = getSubjectsForTimelineSemester(data, term)
             const credits = subjects.reduce((sum, subject) => sum + subject.credits, 0)
-            const critical = subjects.filter((subject) => subject.importance === 'critical').length
-            const state = term === 1 ? 'Đã học' : term === 2 ? 'Đang học' : 'Chưa học'
+            const plan = data.semesterPlans.find((item) => item.semester === term)
+            const state = getSemesterTimelineState(term, data)
             return (
               <button key={term} type="button" className={`rounded-lg border p-4 text-left ${semester === String(term) ? 'border-cyan-400 bg-cyan-400/10' : 'border-zinc-800 bg-zinc-950'}`} onClick={() => setSemester(String(term))}>
                 <p className="text-sm text-zinc-400">Học kỳ {term}</p>
                 <p className="mt-2 text-2xl font-semibold text-white">{credits} TC</p>
-                <p className="mt-1 text-xs text-zinc-500">{subjects.length} môn · {critical} critical</p>
+                <p className="mt-1 text-xs text-zinc-500">{subjects.length} môn{plan ? ` · ${plan.academicYear}` : ''}</p>
                 <Badge tone={state === 'Đang học' ? 'warning' : state === 'Đã học' ? 'success' : 'default'}>{state}</Badge>
               </button>
             )
@@ -2570,12 +2567,11 @@ function CurriculumRoadmap({ data, stats, onUpdateTasks, onOpenSubject }: { data
         </div>
       </Panel>
 
-      <Panel title="Bộ lọc môn học" subtitle="Lọc theo học kỳ, khối kiến thức, trạng thái, rủi ro và tag">
-        <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-7">
+      <Panel title="Bộ lọc môn học" subtitle="Lọc theo học kỳ, khối kiến thức, trạng thái, độ quan trọng và tag">
+        <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
           <Select label="Học kỳ" value={semester} onChange={setSemester} options={['all', '1', '2', '3', '4', '5', '6', '7', '8']} />
           <Select label="Khối" value={groupId} onChange={setGroupId} options={['all', ...data.requirementGroups.map((group) => group.id)]} />
           <Select label="Trạng thái" value={completionStatus} onChange={(value) => setCompletionStatus(value as CompletionStatus | 'all')} options={completionStatuses} />
-          <Select label="Rủi ro" value={riskLevel} onChange={(value) => setRiskLevel(value as RiskLevel | 'all')} options={riskLevels} />
           <Select label="Độ quan trọng" value={importance} onChange={(value) => setImportance(value as ImportanceLevel | 'all')} options={importanceLevels} />
           <Select label="Tag" value={tag} onChange={(value) => setTag(value as SubjectTag | 'all')} options={['all', ...subjectTags]} />
           <Select label="Bắt buộc" value={requiredOnly} onChange={setRequiredOnly} options={['all', 'required', 'elective']} />
@@ -2655,7 +2651,7 @@ function GpaRecoveryMap({ data, stats, onOpenSubject }: { data: AppData; stats: 
 }
 
 function SemesterPlanner({ data }: { data: AppData }) {
-  const plan = data.semesterPlans[0]
+  const plan = getActiveSemesterPlan(data)
   const subjects = plan.subjects
     .map((code) => data.curriculumSubjects.find((subject) => subject.code === code))
     .filter((subject): subject is CurriculumSubject => Boolean(subject))
@@ -2725,15 +2721,29 @@ void SemesterPlanner
 function EditableSemesterPlanner({
   data,
   onUpdateSemesterPlans,
+  onUpdateAcademicPlan,
   onUpdateTasks,
   onOpenSubject,
 }: {
   data: AppData
   onUpdateSemesterPlans: (plans: SemesterPlan[]) => void
+  onUpdateAcademicPlan: (plans: SemesterPlan[], subjects: CurriculumSubject[]) => void
   onUpdateTasks: (tasks: DailyTask[]) => void
   onOpenSubject: (subjectCode: string) => void
 }) {
-  const plan = data.semesterPlans[0]
+  const activePlan = getActiveSemesterPlan(data)
+  const [selectedSemester, setSelectedSemester] = useState(String(activePlan.semester))
+  const [newSemester, setNewSemester] = useState(String(findNextSemesterNumber(data)))
+  const [newAcademicYear, setNewAcademicYear] = useState(activePlan.academicYear)
+  const [newSemesterTarget, setNewSemesterTarget] = useState(String(activePlan.targetSemesterGPA4))
+  const [newSemesterMaxCredits, setNewSemesterMaxCredits] = useState(String(activePlan.maxCreditsRecommended))
+  const [existingSubjectCode, setExistingSubjectCode] = useState('')
+  const [newSubjectCode, setNewSubjectCode] = useState('')
+  const [newSubjectName, setNewSubjectName] = useState('')
+  const [newSubjectCredits, setNewSubjectCredits] = useState('3')
+  const [newSubjectGroupId, setNewSubjectGroupId] = useState(data.requirementGroups[0]?.id ?? 'major')
+  const [newSubjectRequired, setNewSubjectRequired] = useState('required')
+  const plan = data.semesterPlans.find((item) => String(item.semester) === selectedSemester) ?? activePlan
   const subjects = plan.subjects
     .map((code) => data.curriculumSubjects.find((subject) => subject.code === code))
     .filter((subject): subject is CurriculumSubject => Boolean(subject))
@@ -2742,10 +2752,13 @@ function EditableSemesterPlanner({
   const weeklyHours = plan.subjectPlans.reduce((sum, item) => sum + item.weeklyHours, 0)
   const projectedGPA = calculateProjectedSemesterGPA(subjects, plan.subjectPlans)
   const safeSubjects = plan.subjectPlans.filter((item) => item.status === 'safe').length
-  const dangerSubjects = subjects.filter((subject) => ['watch', 'high', 'critical'].includes(subject.riskLevel))
+  const availableSubjects = data.curriculumSubjects
+    .filter((subject) => !data.semesterPlans.some((item) => item.subjects.includes(subject.code)))
+    .sort((a, b) => a.expectedSemester - b.expectedSemester || a.code.localeCompare(b.code))
+  const selectedExistingSubjectCode = availableSubjects.some((subject) => subject.code === existingSubjectCode) ? existingSubjectCode : availableSubjects[0]?.code || ''
 
   const updatePlan = (patch: Partial<SemesterPlan>) => {
-    onUpdateSemesterPlans(data.semesterPlans.map((item, index) => (index === 0 ? { ...item, ...patch } : item)))
+    onUpdateSemesterPlans(data.semesterPlans.map((item) => (item.semester === plan.semester ? { ...item, ...patch } : item)))
   }
 
   const updateSubjectPlan = (subjectCode: string, patch: Partial<SemesterSubjectPlan>) => {
@@ -2755,16 +2768,90 @@ function EditableSemesterPlanner({
   }
 
   const addSubjectTask = (subject: CurriculumSubject) => {
-    onUpdateTasks([
-      ...data.dailyTasks,
-      {
-        id: crypto.randomUUID(),
-        title: `Semester: study ${subject.code} - ${subject.name}`,
-        lane: subject.tags.includes('CP') ? 'CP' : subject.tags.includes('SE') || subject.tags.includes('CS') ? 'CS_SE' : 'GPA',
-        subjectCode: subject.code,
-        done: false,
-      },
-    ])
+    onUpdateTasks(addUniqueDailyTask(data.dailyTasks, {
+      title: `Học kỳ: ${subject.code} - ${subject.name}`,
+      lane: subject.tags.includes('CP') ? 'CP' : subject.tags.includes('SE') || subject.tags.includes('CS') ? 'CS_SE' : 'GPA',
+      subjectCode: subject.code,
+      source: 'roadmap',
+      dueDate: today,
+    }))
+  }
+
+  const addSemester = () => {
+    const semesterNumber = clampSemester(Number(newSemester) || findNextSemesterNumber(data))
+    if (data.semesterPlans.some((item) => item.semester === semesterNumber)) {
+      setSelectedSemester(String(semesterNumber))
+      return
+    }
+    const nextPlan: SemesterPlan = {
+      semester: semesterNumber,
+      academicYear: newAcademicYear.trim() || activePlan.academicYear,
+      targetSemesterGPA4: clampNumber(Number(newSemesterTarget), 0, 4),
+      maxCreditsRecommended: Math.max(0, Math.round(Number(newSemesterMaxCredits) || 0)),
+      subjects: [],
+      subjectPlans: [],
+      focus: ['GPA'],
+      weeklyRules: ['Chọn môn học kỳ này, đặt target điểm và cập nhật sau khi có lịch thi/deadline.'],
+    }
+    onUpdateSemesterPlans([...data.semesterPlans, nextPlan].sort((a, b) => a.semester - b.semester))
+    setSelectedSemester(String(semesterNumber))
+    setNewSemester(String(clampSemester(semesterNumber + 1)))
+  }
+
+  const addSubjectCodeToPlan = (subjectCode: string, nextSubjects = data.curriculumSubjects) => {
+    const code = subjectCode.trim().toUpperCase()
+    if (!code) return
+    const targetPlan = data.semesterPlans.find((item) => item.semester === plan.semester) ?? plan
+    const subjectExists = nextSubjects.some((subject) => subject.code === code)
+    if (!subjectExists) return
+    const existingPlan = data.semesterPlans.find((item) => item.semester !== targetPlan.semester && item.subjects.includes(code))
+    if (existingPlan) {
+      setSelectedSemester(String(existingPlan.semester))
+      return
+    }
+    const subjectsForPlan = targetPlan.subjects.includes(code) ? targetPlan.subjects : [...targetPlan.subjects, code]
+    const subjectPlans = targetPlan.subjectPlans.some((item) => item.subjectCode === code)
+      ? targetPlan.subjectPlans
+      : [...targetPlan.subjectPlans, createDefaultSemesterSubjectPlan(code)]
+    const nextPlans = data.semesterPlans
+      .map((item) => (item.semester === targetPlan.semester ? { ...targetPlan, subjects: subjectsForPlan, subjectPlans } : item))
+      .sort((a, b) => a.semester - b.semester)
+    onUpdateAcademicPlan(nextPlans, nextSubjects)
+  }
+
+  const addExistingSubject = () => {
+    addSubjectCodeToPlan(selectedExistingSubjectCode)
+    setExistingSubjectCode('')
+  }
+
+  const createAndAddSubject = () => {
+    const code = newSubjectCode.trim().toUpperCase()
+    const name = newSubjectName.trim()
+    if (!code || !name) return
+    const existing = data.curriculumSubjects.find((subject) => subject.code === code)
+    if (existing) {
+      addSubjectCodeToPlan(code)
+      return
+    }
+    const credits = Math.max(1, Math.round(Number(newSubjectCredits) || 3))
+    const required = newSubjectRequired === 'required'
+    const nextSubject: CurriculumSubject = {
+      code,
+      name,
+      credits,
+      expectedSemester: clampSemester(plan.semester) as CurriculumSubject['expectedSemester'],
+      groupId: newSubjectGroupId,
+      required,
+      completionStatus: 'planned',
+      riskLevel: 'none',
+      importance: inferSubjectImportance(code, newSubjectGroupId, required),
+      recoveryAction: 'none',
+      tags: inferSubjectTags(code, name, newSubjectGroupId),
+    }
+    addSubjectCodeToPlan(code, [...data.curriculumSubjects, nextSubject])
+    setNewSubjectCode('')
+    setNewSubjectName('')
+    setNewSubjectCredits('3')
   }
 
   return (
@@ -2775,6 +2862,35 @@ function EditableSemesterPlanner({
         <MetricCard icon={BarChart3} label="Tín chỉ" value={totalCredits} helper={`khuyến nghị tối đa ${plan.maxCreditsRecommended}`} />
         <MetricCard icon={AlertTriangle} label="Môn an toàn" value={`${safeSubjects}/${subjects.length}`} helper={`${weeklyHours} giờ/tuần`} />
       </div>
+
+      <Panel title="Chọn học kỳ" subtitle="Kế hoạch từng môn không còn cố định vào học kỳ 2 năm 1">
+        <div className="grid gap-4 md:grid-cols-[220px_1fr]">
+          <Select label="Học kỳ đang xem" value={String(plan.semester)} onChange={setSelectedSemester} options={data.semesterPlans.map((item) => String(item.semester))} />
+          <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-4">
+            <div className="flex flex-wrap gap-2">
+              <Badge>{plan.academicYear}</Badge>
+              <Badge>{subjects.length} môn</Badge>
+              <Badge>{totalCredits} TC</Badge>
+            </div>
+            <p className="mt-2 text-sm text-zinc-400">Thêm học kỳ mới khi qua năm học khác; timeline và các màn Lộ trình sẽ đọc từ danh sách học kỳ này.</p>
+          </div>
+        </div>
+      </Panel>
+
+      <Panel title="Thêm học kỳ mới" subtitle="Tạo học kỳ trống rồi thêm môn ở phần bên dưới">
+        <div className="grid gap-4 md:grid-cols-5">
+          <Input label="Học kỳ" type="number" value={newSemester} onChange={setNewSemester} />
+          <Input label="Năm học" value={newAcademicYear} onChange={setNewAcademicYear} />
+          <Input label="Target GPA" type="number" value={newSemesterTarget} onChange={setNewSemesterTarget} />
+          <Input label="Tín chỉ khuyến nghị" type="number" value={newSemesterMaxCredits} onChange={setNewSemesterMaxCredits} />
+          <div className="flex items-end">
+            <button type="button" className="btn-primary w-full justify-center" onClick={addSemester}>
+              <Plus className="h-4 w-4" />
+              Thêm học kỳ
+            </button>
+          </div>
+        </div>
+      </Panel>
 
       <Panel title="Thiết lập học kỳ" subtitle="Target được lưu vào localStorage">
         <div className="grid gap-4 md:grid-cols-3">
@@ -2820,20 +2936,35 @@ function EditableSemesterPlanner({
           </div>
         </Panel>
 
-        <Panel title="Hàng đợi rủi ro" subtitle="Môn nên xử lý trước buổi review tuần">
-          <div className="grid gap-3">
-            {dangerSubjects.map((subject) => (
-              <button key={subject.code} type="button" className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-left hover:border-amber-300" onClick={() => addSubjectTask(subject)}>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge tone={riskTone(subject.riskLevel)}>{subject.riskLevel}</Badge>
-                  <Badge tone={importanceTone(subject.importance)}>{subject.importance}</Badge>
-                  <Badge>{subject.code}</Badge>
+        <Panel title="Thêm môn vào học kỳ" subtitle="Chọn môn có sẵn hoặc tạo môn mới nếu chương trình hiện tại chưa có">
+          <div className="grid gap-5">
+            <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+              <Select label="Môn có sẵn" value={selectedExistingSubjectCode} onChange={setExistingSubjectCode} options={availableSubjects.map((subject) => subject.code)} />
+              <div className="flex items-end">
+                <button type="button" className="btn-primary w-full justify-center" disabled={!selectedExistingSubjectCode} onClick={addExistingSubject}>
+                  <Plus className="h-4 w-4" />
+                  Thêm môn
+                </button>
+              </div>
+            </div>
+            {!availableSubjects.length && <EmptyState text="Tất cả môn trong chương trình hiện đã nằm trong học kỳ này." />}
+
+            <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-4">
+              <p className="font-semibold text-white">Tạo môn mới</p>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                <Input label="Mã môn" value={newSubjectCode} onChange={setNewSubjectCode} />
+                <Input label="Tên môn" value={newSubjectName} onChange={setNewSubjectName} />
+                <Input label="Tín chỉ" type="number" value={newSubjectCredits} onChange={setNewSubjectCredits} />
+                <Select label="Khối kiến thức" value={newSubjectGroupId} onChange={setNewSubjectGroupId} options={data.requirementGroups.map((group) => group.id)} />
+                <Select label="Loại môn" value={newSubjectRequired} onChange={setNewSubjectRequired} options={['required', 'elective']} />
+                <div className="flex items-end">
+                  <button type="button" className="btn-primary w-full justify-center" onClick={createAndAddSubject}>
+                    <Plus className="h-4 w-4" />
+                    Tạo và thêm
+                  </button>
                 </div>
-                <p className="mt-2 font-medium text-white">{subject.name}</p>
-                <p className="mt-1 text-sm text-amber-100">{subject.notes}</p>
-              </button>
-            ))}
-            {!dangerSubjects.length && <EmptyState text="No current semester risk subjects." />}
+              </div>
+            </div>
           </div>
         </Panel>
       </div>
@@ -2888,6 +3019,60 @@ function SemesterSubjectRow({
 
 function createDefaultSemesterSubjectPlan(subjectCode: string): SemesterSubjectPlan {
   return { subjectCode, targetGrade: 'B+', status: 'not_started', weeklyHours: 3 }
+}
+
+function getActiveSemesterPlan(data: AppData) {
+  return data.semesterPlans
+    .slice()
+    .sort((a, b) => a.semester - b.semester)
+    .find((plan) => plan.subjectPlans.some((item) => item.status !== 'safe') || plan.subjects.some((code) => {
+      const subject = data.curriculumSubjects.find((item) => item.code === code)
+      return subject?.completionStatus !== 'completed'
+    })) ?? data.semesterPlans[0] ?? semesterPlansSeed[0]
+}
+
+function getSubjectSemesterPlan(data: AppData, subjectCode: string) {
+  return data.semesterPlans.find((plan) => plan.subjects.includes(subjectCode) || plan.subjectPlans.some((item) => item.subjectCode === subjectCode))
+}
+
+function findNextSemesterNumber(data: AppData) {
+  const used = new Set(data.semesterPlans.map((plan) => plan.semester))
+  const lastPlan = data.semesterPlans[data.semesterPlans.length - 1]
+  return Array.from({ length: 8 }, (_, index) => index + 1).find((semester) => !used.has(semester)) ?? clampSemester((lastPlan?.semester ?? 1) + 1)
+}
+
+function clampSemester(value: number): CurriculumSubject['expectedSemester'] {
+  return Math.max(1, Math.min(8, Math.round(value || 1))) as CurriculumSubject['expectedSemester']
+}
+
+function getSemesterTimelineState(term: number, data: AppData): 'Đã học' | 'Đang học' | 'Chưa học' {
+  const plan = data.semesterPlans.find((item) => item.semester === term)
+  const termSubjects = getSubjectsForTimelineSemester(data, term)
+  if (termSubjects.length && termSubjects.every((subject) => subject.completionStatus === 'completed')) return 'Đã học'
+  if (plan && plan.subjects.some((code) => {
+    const subject = data.curriculumSubjects.find((item) => item.code === code)
+    return subject?.completionStatus !== 'completed'
+  })) return 'Đang học'
+  return 'Chưa học'
+}
+
+function getSubjectTimelineSemester(data: AppData, subjectCode: string) {
+  const plannedSemester = data.semesterPlans.find((plan) => plan.subjects.includes(subjectCode))?.semester
+  if (plannedSemester) return plannedSemester
+  return data.curriculumSubjects.find((subject) => subject.code === subjectCode)?.expectedSemester
+}
+
+function getSubjectsForTimelineSemester(data: AppData, semester: number) {
+  return data.curriculumSubjects
+    .filter((subject) => getSubjectTimelineSemester(data, subject.code) === semester)
+    .sort((a, b) => a.code.localeCompare(b.code))
+}
+
+function getCompletedGradeAttentionSubjects(data: AppData) {
+  return data.curriculumSubjects
+    .filter((subject) => subject.completionStatus === 'completed' && subject.grade)
+    .filter((subject) => ['C', 'D', 'F'].includes(String(subject.grade?.letter ?? '')) || (subject.grade?.point4 ?? 4) < 2.5)
+    .sort((a, b) => (a.grade?.point4 ?? 4) - (b.grade?.point4 ?? 4) || a.code.localeCompare(b.code))
 }
 
 function WeeklyPlanPage({
@@ -4262,13 +4447,13 @@ function getWeeklySummary(data: AppData) {
   const blockedProjects = data.projects
     .filter((project) => project.status !== 'done' && ['critical', 'high'].includes(project.priority))
     .sort((a, b) => projectPriorityScore(b.priority) - projectPriorityScore(a.priority))
-  const semesterPlan = data.semesterPlans[0]
+  const semesterPlan = getActiveSemesterPlan(data)
   const unsafeSubjects = semesterPlan.subjectPlans.filter((subjectPlan) => subjectPlan.status !== 'safe')
   const openAssignmentSubjects = semesterPlan.subjectPlans
     .filter((subjectPlan) => subjectPlan.status === 'assignment')
     .map((subjectPlan) => data.curriculumSubjects.find((subject) => subject.code === subjectPlan.subjectCode))
     .filter((subject): subject is CurriculumSubject => Boolean(subject))
-  const riskSubjects = data.curriculumSubjects.filter((subject) => ['watch', 'high', 'critical'].includes(subject.riskLevel)).slice(0, 5)
+  const riskSubjects = getActiveRiskSubjects(data).slice(0, 5)
   const suggestedFocus = [
     riskSubjects[0] ? `Move ${riskSubjects[0].code} first` : '',
     upsolveCount ? `Clear ${upsolveCount} CP upsolve item(s)` : '',
@@ -4701,6 +4886,7 @@ function NavButton({
 }
 
 function SubjectCard({ subject, groupName, onOpenSubject, onAddTask }: { subject: CurriculumSubject; groupName: string; onOpenSubject?: (subjectCode: string) => void; onAddTask?: (subject: CurriculumSubject) => void }) {
+  const isCompleted = subject.completionStatus === 'completed'
   return (
     <article className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -4712,7 +4898,7 @@ function SubjectCard({ subject, groupName, onOpenSubject, onAddTask }: { subject
       </div>
       <div className="mt-4 grid gap-2 sm:grid-cols-3">
         <Badge>{`Tiến độ: ${subject.completionStatus}`}</Badge>
-        <Badge tone={riskTone(subject.riskLevel)}>{`Rủi ro: ${subject.riskLevel}`}</Badge>
+        <Badge tone={isCompleted ? 'default' : riskTone(subject.riskLevel)}>{isCompleted ? 'Lịch sử GPA' : `Theo dõi: ${subject.riskLevel}`}</Badge>
         <Badge tone={importanceTone(subject.importance)}>{`Quan trọng: ${subject.importance}`}</Badge>
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
@@ -4726,7 +4912,7 @@ function SubjectCard({ subject, groupName, onOpenSubject, onAddTask }: { subject
       </div>
       {subject.grade && <p className="mt-3 text-sm text-zinc-300">Điểm: {subject.grade.score10}/10 · {subject.grade.letter} · {subject.grade.point4}/4</p>}
       {subject.notes && <p className="mt-3 text-sm text-zinc-400">{subject.notes}</p>}
-      {onAddTask && (
+      {onAddTask && !isCompleted && (
         <button type="button" className="btn-primary mt-4" onClick={() => onAddTask(subject)}>
           <Plus className="h-4 w-4" />
           Đưa vào hôm nay
@@ -4848,7 +5034,7 @@ function calculateProjectedSemesterGPA(subjects: CurriculumSubject[], subjectPla
 }
 
 function getGpaPriorityQueue(data: AppData) {
-  const semesterPlan = data.semesterPlans[0]
+  const semesterPlan = getActiveSemesterPlan(data)
   return semesterPlan.subjects
     .map((code) => data.curriculumSubjects.find((subject) => subject.code === code))
     .filter((subject): subject is CurriculumSubject => Boolean(subject))
@@ -4883,7 +5069,7 @@ function generateWeeklyStudyBlocks(data: AppData): WeeklyStudyBlock[] {
   const subjectDailyCount = new globalThis.Map<string, number>()
   const dayHeavyCount = new globalThis.Map<FixedEvent['dayOfWeek'], number>()
   const targetMinutesBySubject = new globalThis.Map<string, number>()
-  const semesterPlan = data.semesterPlans[0]
+  const semesterPlan = getActiveSemesterPlan(data)
 
   semesterPlan.subjectPlans.forEach((plan) => {
     targetMinutesBySubject.set(plan.subjectCode, Math.max(60, plan.weeklyHours * 60))
@@ -4992,7 +5178,7 @@ function getWeeklySubjectHourGaps(data: AppData) {
   data.weeklyStudyBlocks.forEach((block) => {
     plannedBySubject.set(block.subjectCode, (plannedBySubject.get(block.subjectCode) ?? 0) + Math.max(0, timeToMinutes(block.endTime) - timeToMinutes(block.startTime)))
   })
-  return data.semesterPlans[0].subjectPlans
+  return getActiveSemesterPlan(data).subjectPlans
     .map((plan) => {
       const targetMinutes = Math.max(60, plan.weeklyHours * 60)
       const plannedMinutes = plannedBySubject.get(plan.subjectCode) ?? 0
@@ -5168,7 +5354,7 @@ function getDailyTaskReason(task: DailyTask, data: AppData) {
   if (task.source === 'exam' || nextExam) return nextExam ? `Thi gần nhất còn ${getDaysUntil(nextExam.date)} ngày` : 'Việc ôn thi'
   if (task.source === 'cp') return 'Bạn đã đưa CP vào hôm nay'
   if (task.source === 'project') return 'Bạn đã đưa project vào hôm nay'
-  if (task.source === 'roadmap') return subject?.riskLevel === 'high' || subject?.riskLevel === 'critical' ? 'Môn rủi ro trong lộ trình' : 'Bạn đưa từ lộ trình'
+  if (task.source === 'roadmap') return subject?.completionStatus === 'completed' ? 'Môn đã có điểm trong bảng điểm' : 'Bạn đưa từ lộ trình'
   if (task.lane === 'GPA') return 'Ưu tiên GPA'
   return 'Việc thủ công hôm nay'
 }
@@ -5247,12 +5433,6 @@ function getSubjectReviewSignals(data: AppData, subjects: CurriculumSubject[]) {
     .sort((a, b) => getPriorityScore(b) - getPriorityScore(a))
     .slice(0, 6)
   return { recent, forgotten }
-}
-
-function uniqueSubjects(subjects: CurriculumSubject[]) {
-  const byCode = new globalThis.Map<string, CurriculumSubject>()
-  subjects.forEach((subject) => byCode.set(subject.code, subject))
-  return Array.from(byCode.values())
 }
 
 function createDailyReview(data: AppData): DailyReview {
@@ -5408,8 +5588,18 @@ function getStats(data: AppData) {
   const currentGPA = calculatedGPA || data.academicProfile.cumulativeGPA4
   const safeCompletedCredits = completedCredits || data.academicProfile.completedCredits
   const creditProgress = calculateCreditProgress(safeCompletedCredits, data.academicProfile.minimumRequiredCredits)
-  const riskAlerts = data.curriculumSubjects.filter((subject) => ['watch', 'high', 'critical'].includes(subject.riskLevel))
+  const riskAlerts = getActiveRiskSubjects(data)
   return { currentGPA, completedCredits: safeCompletedCredits, creditProgress, riskAlerts }
+}
+
+function getActiveRiskSubjects(data: AppData) {
+  const activePlan = getActiveSemesterPlan(data)
+  const activeCodes = new Set(activePlan.subjects)
+  return data.curriculumSubjects.filter((subject) =>
+    subject.completionStatus !== 'completed' &&
+    activeCodes.has(subject.code) &&
+    ['watch', 'high', 'critical'].includes(subject.riskLevel),
+  )
 }
 
 function getGroupName(groupId: string, groups: RequirementGroup[]) {
