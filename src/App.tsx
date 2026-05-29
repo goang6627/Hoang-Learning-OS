@@ -222,6 +222,20 @@ type WeeklyReview = {
   savedAt: string
 }
 
+type DailyReview = {
+  id: string
+  date: string
+  doneTasks: number
+  totalTasks: number
+  focusMinutes: number
+  subjects: string[]
+  cpTasks: string[]
+  projectTasks: string[]
+  carryOverTasks: string[]
+  tomorrowSuggestions: string[]
+  savedAt: string
+}
+
 type AppSettings = {
   showPlaceholderPages: boolean
 }
@@ -240,6 +254,7 @@ type AppData = {
   projects: StudyProject[]
   resources: StudyResource[]
   weeklyReviews: WeeklyReview[]
+  dailyReviews: DailyReview[]
   settings: AppSettings
 }
 
@@ -260,7 +275,7 @@ type GlobalSearchResult = {
 }
 
 const today = getLocalDateKey(new Date())
-const DATA_VERSION = 'real-2025-2026.2-action-v4'
+const DATA_VERSION = 'real-2025-2026.2-daily-review-v5'
 
 const STORAGE_KEYS = {
   dataVersion: 'hoang_learning_os_data_version',
@@ -277,6 +292,7 @@ const STORAGE_KEYS = {
   projects: 'hoang_learning_os_projects',
   resources: 'hoang_learning_os_resources',
   weeklyReviews: 'hoang_learning_os_weekly_reviews',
+  dailyReviews: 'hoang_learning_os_daily_reviews',
   settings: 'hoang_learning_os_settings',
 } as const
 
@@ -645,6 +661,14 @@ function App() {
     })
     notify('Weekly Review saved')
   }
+  const saveDailyReview = (review: DailyReview) => {
+    const exists = data.dailyReviews.some((item) => item.date === review.date)
+    setData({
+      ...data,
+      dailyReviews: exists ? data.dailyReviews.map((item) => (item.date === review.date ? review : item)) : [review, ...data.dailyReviews],
+    })
+    notify('Đã chốt hôm nay')
+  }
   const replaceData = (nextData: AppData) => {
     setData(nextData)
     notify('Backup imported')
@@ -745,7 +769,7 @@ function App() {
           </header>
 
           <section className="scroll-area min-h-0 flex-1 overflow-y-auto px-4 py-6 pb-40 md:px-8 lg:pb-32">
-            {activePage === 'dashboard' && <DailyWorkflowPage data={data} stats={stats} onUpdateTasks={updateTasks} onStartFocus={setFocusTarget} onOpenSubject={openSubject} />}
+            {activePage === 'dashboard' && <DailyWorkflowPage data={data} stats={stats} onUpdateTasks={updateTasks} onSaveDailyReview={saveDailyReview} onStartFocus={setFocusTarget} onOpenSubject={openSubject} />}
             {activePage === 'learningPath' && <LearningPathWorkflowPage data={data} stats={stats} onUpdateSemesterPlans={updateSemesterPlans} onUpdateTasks={updateTasks} onSaveReview={saveWeeklyReview} onOpenSubject={openSubject} />}
             {activePage === 'exams' && <ExamSchedulePage data={data} onOpenSubject={openSubject} />}
             {activePage === 'study' && <SimpleStudyPlanPage data={data} onUpdateTasks={updateTasks} onStartFocus={setFocusTarget} onOpenSubject={openSubject} />}
@@ -1268,6 +1292,7 @@ function loadData(): AppData {
     projects: readStorage<StudyProject[]>(STORAGE_KEYS.projects),
     resources: readStorage<StudyResource[]>(STORAGE_KEYS.resources),
     weeklyReviews: readStorage<WeeklyReview[]>(STORAGE_KEYS.weeklyReviews),
+    dailyReviews: readStorage<DailyReview[]>(STORAGE_KEYS.dailyReviews),
     settings: readStorage<AppSettings>(STORAGE_KEYS.settings),
   }
 
@@ -1285,6 +1310,7 @@ function loadData(): AppData {
     projects: loaded.projects ?? projectsSeed,
     resources: loaded.resources ?? resourcesSeed,
     weeklyReviews: loaded.weeklyReviews ?? [],
+    dailyReviews: loaded.dailyReviews ?? [],
     settings: loaded.settings ?? settingsSeed,
   })
 }
@@ -1313,6 +1339,7 @@ function saveData(data: AppData) {
   localStorage.setItem(STORAGE_KEYS.projects, JSON.stringify(data.projects))
   localStorage.setItem(STORAGE_KEYS.resources, JSON.stringify(data.resources))
   localStorage.setItem(STORAGE_KEYS.weeklyReviews, JSON.stringify(data.weeklyReviews))
+  localStorage.setItem(STORAGE_KEYS.dailyReviews, JSON.stringify(data.dailyReviews))
   localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(data.settings))
 }
 
@@ -1332,6 +1359,7 @@ function normalizeData(value: Partial<AppData>): AppData {
     projects: Array.isArray(value.projects) && value.projects.length ? value.projects : projectsSeed,
     resources: Array.isArray(value.resources) && value.resources.length ? value.resources : resourcesSeed,
     weeklyReviews: Array.isArray(value.weeklyReviews) ? value.weeklyReviews : [],
+    dailyReviews: Array.isArray(value.dailyReviews) ? value.dailyReviews : [],
     settings: value.settings && typeof value.settings.showPlaceholderPages === 'boolean' ? value.settings : settingsSeed,
   }
 }
@@ -1373,6 +1401,7 @@ function getDefaultData(): AppData {
     projects: projectsSeed,
     resources: resourcesSeed,
     weeklyReviews: [],
+    dailyReviews: [],
     settings: settingsSeed,
   }
 }
@@ -1620,12 +1649,14 @@ function DailyWorkflowPage({
   data,
   stats,
   onUpdateTasks,
+  onSaveDailyReview,
   onStartFocus,
   onOpenSubject,
 }: {
   data: AppData
   stats: ReturnType<typeof getStats>
   onUpdateTasks: (tasks: DailyTask[]) => void
+  onSaveDailyReview: (review: DailyReview) => void
   onStartFocus: (target: FocusTarget) => void
   onOpenSubject: (subjectCode: string) => void
 }) {
@@ -1647,7 +1678,7 @@ function DailyWorkflowPage({
         ))}
       </div>
 
-      {section === 'today' && <DailyWorkflowOverview data={data} stats={stats} onUpdateTasks={onUpdateTasks} onStartFocus={onStartFocus} onOpenSubject={onOpenSubject} />}
+      {section === 'today' && <DailyWorkflowOverview data={data} stats={stats} onUpdateTasks={onUpdateTasks} onSaveDailyReview={onSaveDailyReview} onStartFocus={onStartFocus} onOpenSubject={onOpenSubject} />}
       {section === 'exams' && <ExamSchedulePage data={data} onOpenSubject={onOpenSubject} />}
       {section === 'study' && <SimpleStudyPlanPage data={data} onUpdateTasks={onUpdateTasks} onStartFocus={onStartFocus} onOpenSubject={onOpenSubject} />}
       {section === 'gpa' && <SimpleGpaPage data={data} stats={stats} onOpenSubject={onOpenSubject} />}
@@ -1659,12 +1690,14 @@ function DailyWorkflowOverview({
   data,
   stats,
   onUpdateTasks,
+  onSaveDailyReview,
   onStartFocus,
   onOpenSubject,
 }: {
   data: AppData
   stats: ReturnType<typeof getStats>
   onUpdateTasks: (tasks: DailyTask[]) => void
+  onSaveDailyReview: (review: DailyReview) => void
   onStartFocus: (target: FocusTarget) => void
   onOpenSubject: (subjectCode: string) => void
 }) {
@@ -1676,6 +1709,8 @@ function DailyWorkflowOverview({
   const activeExamTasks = examReviewTasks.filter((task) => !task.done)
   const completedExamTasks = examReviewTasks.filter((task) => task.done)
   const recommendedTasks = getRecommendedDailyTasks(data).slice(0, 4)
+  const dailySummary = getDailyReviewSummary(data)
+  const todayReview = data.dailyReviews.find((review) => review.date === today)
 
   const addNextExamTask = () => {
     if (!nextExam?.subjectCode) return
@@ -1694,6 +1729,10 @@ function DailyWorkflowOverview({
 
   const removeTask = (taskId: string) => {
     onUpdateTasks(data.dailyTasks.filter((task) => task.id !== taskId))
+  }
+
+  const closeToday = () => {
+    onSaveDailyReview(createDailyReview(data))
   }
 
   return (
@@ -1788,6 +1827,35 @@ function DailyWorkflowOverview({
             </div>
           ))}
           {!examReviewTasks.length && <EmptyState text="Chưa có việc ôn GPA hôm nay. Thêm từ môn sắp thi nhất hoặc tab Ôn tập." />}
+        </div>
+      </Panel>
+
+      <Panel title="Chốt ngày" subtitle="Tổng kết nhanh để biết hôm nay đã làm gì và mai tiếp tục gì">
+        <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <MetricCard icon={CheckCircle2} label="Task đã xong" value={`${dailySummary.doneTasks}/${dailySummary.totalTasks}`} helper={`${dailySummary.openTasks} việc còn mở`} />
+            <MetricCard icon={Target} label="Phút Focus" value={dailySummary.focusMinutes} helper="ghi nhận hôm nay" />
+            <MetricCard icon={BookOpen} label="Môn đã đụng tới" value={dailySummary.subjects.length} helper={dailySummary.subjects.slice(0, 2).join(', ') || 'chưa có'} />
+            <MetricCard icon={ListChecks} label="CP / Project" value={`${dailySummary.cpTasks.length}/${dailySummary.projectTasks.length}`} helper="được đưa vào hôm nay" />
+          </div>
+          <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="font-semibold text-white">Gợi ý ngày mai</p>
+                <p className="mt-1 text-sm text-zinc-400">{todayReview ? `Đã chốt lúc ${new Date(todayReview.savedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}` : 'Chưa chốt hôm nay'}</p>
+              </div>
+              <button type="button" className="btn-primary" onClick={closeToday}>
+                <Save className="h-4 w-4" />
+                Chốt hôm nay
+              </button>
+            </div>
+            <div className="mt-4 grid gap-2">
+              {dailySummary.tomorrowSuggestions.map((item) => (
+                <p key={item} className="rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-300">{item}</p>
+              ))}
+              {!dailySummary.tomorrowSuggestions.length && <p className="text-sm text-zinc-500">Không còn việc mở. Mai bắt đầu từ lịch thi gần nhất.</p>}
+            </div>
+          </div>
         </div>
       </Panel>
     </div>
@@ -4166,7 +4234,7 @@ function SettingsPage({
 
   const reset = () => {
     onResetData()
-    setMessage('Đã reset về seed data v4.')
+    setMessage('Đã reset về seed data v5.')
   }
 
   return (
@@ -4645,6 +4713,66 @@ function getDailyTaskReason(task: DailyTask, data: AppData) {
   if (task.source === 'roadmap') return subject?.riskLevel === 'high' || subject?.riskLevel === 'critical' ? 'Môn rủi ro trong lộ trình' : 'Bạn đưa từ lộ trình'
   if (task.lane === 'GPA') return 'Ưu tiên GPA'
   return 'Việc thủ công hôm nay'
+}
+
+function getDailyReviewSummary(data: AppData) {
+  const todaySessions = data.studySessions.filter((session) => session.date === today)
+  const todayPomodoros = data.pomodoroSessions.filter((session) => getLocalDateKey(new Date(session.completedAt)) === today)
+  const focusMinutes = todayPomodoros.length
+    ? todayPomodoros.reduce((sum, session) => sum + session.minutes, 0)
+    : todaySessions.reduce((sum, session) => sum + session.minutes, 0)
+  const openTasks = data.dailyTasks.filter((task) => !task.done)
+  const doneTasks = data.dailyTasks.filter((task) => task.done)
+  const subjects = uniqueStrings([
+    ...todaySessions.map((session) => session.subjectCode).filter(Boolean),
+    ...data.dailyTasks.filter((task) => task.done && task.subjectCode).map((task) => task.subjectCode),
+  ] as string[])
+  const cpTasks = data.dailyTasks.filter((task) => task.source === 'cp').map((task) => task.title)
+  const projectTasks = data.dailyTasks.filter((task) => task.source === 'project').map((task) => task.title)
+  const carryOverTasks = openTasks.map((task) => task.title)
+  const tomorrowSuggestions = getTomorrowSuggestions(data, openTasks)
+  return {
+    doneTasks: doneTasks.length,
+    totalTasks: data.dailyTasks.length,
+    openTasks: openTasks.length,
+    focusMinutes,
+    subjects,
+    cpTasks,
+    projectTasks,
+    carryOverTasks,
+    tomorrowSuggestions,
+  }
+}
+
+function createDailyReview(data: AppData): DailyReview {
+  const summary = getDailyReviewSummary(data)
+  const existing = data.dailyReviews.find((review) => review.date === today)
+  return {
+    id: existing?.id ?? crypto.randomUUID(),
+    date: today,
+    doneTasks: summary.doneTasks,
+    totalTasks: summary.totalTasks,
+    focusMinutes: summary.focusMinutes,
+    subjects: summary.subjects,
+    cpTasks: summary.cpTasks,
+    projectTasks: summary.projectTasks,
+    carryOverTasks: summary.carryOverTasks,
+    tomorrowSuggestions: summary.tomorrowSuggestions,
+    savedAt: new Date().toISOString(),
+  }
+}
+
+function getTomorrowSuggestions(data: AppData, openTasks: DailyTask[]) {
+  const suggestions = getRecommendedDailyTasks({ ...data, dailyTasks: openTasks }).slice(0, 3).map((task) => task.title)
+  const nextExam = getExamEvents(data).find((event) => getDaysUntil(event.date) >= 0)
+  if (nextExam && !suggestions.some((item) => item.includes(nextExam.subjectCode ?? nextExam.title))) {
+    suggestions.unshift(`Ôn thi: ${nextExam.subjectCode ?? nextExam.title}`)
+  }
+  return uniqueStrings(suggestions).slice(0, 3)
+}
+
+function uniqueStrings(items: string[]) {
+  return Array.from(new Set(items.filter(Boolean)))
 }
 
 function getRecommendedDailyTasks(data: AppData) {
