@@ -115,10 +115,13 @@ type DailyTask = {
   subjectCode?: string
   weeklyBlockId?: string
   source?: 'manual' | 'exam' | 'cp' | 'project' | 'roadmap'
+  reviewStage?: ExamReviewStage
   createdAt?: string
   dueDate?: string
   done: boolean
 }
+
+type ExamReviewStage = 'read_theory' | 'practice_core' | 'mock_exam' | 'ready'
 
 type StudySession = {
   id: string
@@ -303,6 +306,19 @@ type GlobalSearchResult = {
   subjectCode?: string
 }
 
+type ExamStudyPlanItem = {
+  event: FixedEvent
+  subject?: CurriculumSubject
+  daysLeft: number
+  countdownLabel: string
+  tone: 'default' | 'success' | 'warning' | 'danger'
+  reviewStatus: ReturnType<typeof getExamReviewStatus>
+  nextStage: ExamReviewStage
+  suggestedTaskTitle: string
+  reason: string
+  steps: Array<{ stage: ExamReviewStage; label: string; done: boolean; active: boolean }>
+}
+
 const today = getLocalDateKey(new Date())
 const DATA_VERSION = 'real-2025-2026.2-daily-review-v5'
 
@@ -341,6 +357,13 @@ const resourceStatuses: StudyResource['status'][] = ['saved', 'using', 'finished
 const semesterSubjectStatuses: SemesterSubjectPlan['status'][] = ['not_started', 'studying', 'assignment', 'exam_review', 'safe']
 const semesterTargetGrades: SemesterSubjectPlan['targetGrade'][] = ['A', 'B+', 'B', 'C+', 'C']
 const fixedEventTypes: FixedEvent['type'][] = ['class', 'work', 'exam', 'deadline', 'personal']
+const examReviewStages: ExamReviewStage[] = ['read_theory', 'practice_core', 'mock_exam', 'ready']
+const examReviewStageLabels: Record<ExamReviewStage, string> = {
+  read_theory: 'Nắm lý thuyết / công thức chính',
+  practice_core: 'Làm bài tập trọng tâm',
+  mock_exam: 'Làm đề hoặc tự kiểm tra',
+  ready: 'Ôn nhanh trước giờ thi',
+}
 const weekDays: Array<{ value: FixedEvent['dayOfWeek']; label: string }> = [
   { value: 1, label: 'Monday' },
   { value: 2, label: 'Tuesday' },
@@ -1748,6 +1771,8 @@ function DailyWorkflowOverview({
   const nextExam = exams.find((event) => getDaysUntil(event.date) >= 0) ?? exams[0]
   const examSubject = nextExam?.subjectCode ? data.curriculumSubjects.find((subject) => subject.code === nextExam.subjectCode) : undefined
   const nextExamReviewStatus = nextExam ? getExamReviewStatus(nextExam, data) : null
+  const smartExamPlan = getSmartExamPlan(data)
+  const nextExamPlan = nextExam ? smartExamPlan.find((item) => item.event.id === nextExam.id) : undefined
   const examReviewTasks = data.dailyTasks.filter((task) => task.lane === 'GPA')
   const activeExamTasks = examReviewTasks.filter((task) => !task.done)
   const completedExamTasks = examReviewTasks.filter((task) => task.done)
@@ -1762,10 +1787,23 @@ function DailyWorkflowOverview({
   const addNextExamTask = () => {
     if (!nextExam?.subjectCode) return
     onUpdateTasks(addUniqueDailyTask(data.dailyTasks, {
-      title: `Ôn thi: ${nextExam.subjectCode}${examSubject ? ` - ${examSubject.name}` : ''}`,
+      title: nextExamPlan?.suggestedTaskTitle ?? `Ôn thi: ${nextExam.subjectCode}${examSubject ? ` - ${examSubject.name}` : ''}`,
       lane: 'GPA',
       subjectCode: nextExam.subjectCode,
       source: 'exam',
+      reviewStage: nextExamPlan?.nextStage ?? 'read_theory',
+      dueDate: today,
+    }))
+  }
+
+  const addSmartExamTask = (plan: ExamStudyPlanItem) => {
+    if (!plan.event.subjectCode) return
+    onUpdateTasks(addUniqueDailyTask(data.dailyTasks, {
+      title: plan.suggestedTaskTitle,
+      lane: 'GPA',
+      subjectCode: plan.event.subjectCode,
+      source: 'exam',
+      reviewStage: plan.nextStage,
       dueDate: today,
     }))
   }
@@ -1817,6 +1855,38 @@ function DailyWorkflowOverview({
           )}
         </div>
       </section>
+
+      <Panel title="Kế hoạch ôn thi tự động" subtitle="App tự chọn bước tiếp theo theo ngày thi, mức rủi ro và việc đã hoàn thành">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {smartExamPlan.slice(0, 5).map((plan) => (
+            <article key={plan.event.id} className="rounded-lg border border-zinc-800 bg-zinc-950 p-4">
+              <div className="flex flex-wrap gap-2">
+                <Badge tone={plan.tone}>{plan.countdownLabel}</Badge>
+                <Badge tone={examReviewTone(plan.reviewStatus)}>{plan.reviewStatus}</Badge>
+                {plan.event.subjectCode && <button type="button" onClick={() => onOpenSubject(plan.event.subjectCode!)}><Badge>{plan.event.subjectCode}</Badge></button>}
+              </div>
+              <p className="mt-3 font-semibold text-white">{plan.subject?.name ?? plan.event.title}</p>
+              <p className="mt-1 text-sm text-cyan-200">{formatFixedEventTiming(plan.event)}</p>
+              <p className="mt-3 text-sm text-zinc-300">{plan.reason}</p>
+              <div className="mt-4 grid gap-2">
+                {plan.steps.map((step) => (
+                  <div key={step.stage} className={`rounded-md border px-3 py-2 text-sm ${step.done ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-100' : step.active ? 'border-cyan-400/40 bg-cyan-400/10 text-cyan-100' : 'border-zinc-800 bg-zinc-900 text-zinc-400'}`}>
+                    {step.label}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button type="button" className="btn-primary" onClick={() => addSmartExamTask(plan)}>
+                  <Plus className="h-4 w-4" />
+                  Thêm bước tiếp theo
+                </button>
+                <button type="button" className="chip" onClick={() => onStartFocus({ label: plan.suggestedTaskTitle, lane: 'GPA', subjectCode: plan.event.subjectCode })}>Focus</button>
+              </div>
+            </article>
+          ))}
+          {!smartExamPlan.length && <EmptyState text="Không còn lịch thi sắp tới." />}
+        </div>
+      </Panel>
 
       <Panel title="Việc nên làm tiếp theo" subtitle="Tự ưu tiên từ lịch thi, GPA, CP, Project và Lộ trình">
         <div className="grid gap-3">
@@ -2013,6 +2083,7 @@ function SimpleStudyPlanPage({
   onOpenSubject: (subjectCode: string) => void
 }) {
   const exams = getExamEvents(data).filter((event) => getDaysUntil(event.date) >= 0)
+  const smartExamPlan = getSmartExamPlan(data)
   const reviewTasks = data.dailyTasks.filter((task) => task.lane === 'GPA')
   const activeTasks = reviewTasks.filter((task) => !task.done)
   const doneTasks = reviewTasks.filter((task) => task.done)
@@ -2020,16 +2091,15 @@ function SimpleStudyPlanPage({
   const addReviewTask = (event: FixedEvent) => {
     if (!event.subjectCode) return
     const subject = data.curriculumSubjects.find((item) => item.code === event.subjectCode)
-    onUpdateTasks([
-      ...data.dailyTasks,
-      {
-        id: crypto.randomUUID(),
-        title: `Ôn thi: ${event.subjectCode}${subject ? ` - ${subject.name}` : ''}`,
-        lane: 'GPA',
-        subjectCode: event.subjectCode,
-        done: false,
-      },
-    ])
+    const plan = smartExamPlan.find((item) => item.event.id === event.id)
+    onUpdateTasks(addUniqueDailyTask(data.dailyTasks, {
+      title: plan?.suggestedTaskTitle ?? `Ôn thi: ${event.subjectCode}${subject ? ` - ${subject.name}` : ''}`,
+      lane: 'GPA',
+      subjectCode: event.subjectCode,
+      source: 'exam',
+      reviewStage: plan?.nextStage ?? 'read_theory',
+      dueDate: today,
+    }))
   }
 
   const toggleTask = (taskId: string) => {
@@ -4995,6 +5065,73 @@ function getDaysUntil(date?: string) {
   return Math.ceil((target.getTime() - todayDate.getTime()) / 86400000)
 }
 
+function getSmartExamPlan(data: AppData): ExamStudyPlanItem[] {
+  return getExamEvents(data)
+    .filter((event) => getDaysUntil(event.date) >= 0)
+    .map((event) => {
+      const subject = event.subjectCode ? data.curriculumSubjects.find((item) => item.code === event.subjectCode) : undefined
+      const daysLeft = getDaysUntil(event.date)
+      const reviewStatus = getExamReviewStatus(event, data)
+      const nextStage = getNextExamReviewStage(event, data)
+      const steps = examReviewStages.map((stage) => {
+        const stageIndex = examReviewStages.indexOf(stage)
+        const nextIndex = examReviewStages.indexOf(nextStage)
+        return {
+          stage,
+          label: examReviewStageLabels[stage],
+          done: stageIndex < nextIndex || reviewStatus === 'Ổn',
+          active: stage === nextStage && reviewStatus !== 'Ổn',
+        }
+      })
+      return {
+        event,
+        subject,
+        daysLeft,
+        countdownLabel: daysLeft === 0 ? 'Thi hôm nay' : `${daysLeft} ngày nữa`,
+        tone: daysLeft <= 1 ? 'danger' : daysLeft <= 4 ? 'warning' : 'default',
+        reviewStatus,
+        nextStage,
+        suggestedTaskTitle: buildExamTaskTitle(event, subject, nextStage),
+        reason: getExamPlanReason(event, subject, daysLeft, reviewStatus),
+        steps,
+      }
+    })
+}
+
+function getNextExamReviewStage(event: FixedEvent, data: AppData): ExamReviewStage {
+  if (!event.subjectCode) return 'read_theory'
+  const tasks = getExamReviewTasks(data, event.subjectCode)
+  if (!tasks.length) return 'read_theory'
+  if (tasks.some((task) => task.reviewStage === 'ready' && task.done)) return 'ready'
+  if (tasks.some((task) => task.reviewStage === 'mock_exam' && task.done)) return 'ready'
+  if (tasks.some((task) => task.reviewStage === 'practice_core' && task.done)) return 'mock_exam'
+  if (tasks.some((task) => task.done)) return 'practice_core'
+  return tasks.some((task) => task.reviewStage === 'read_theory') ? 'practice_core' : 'read_theory'
+}
+
+function getExamReviewTasks(data: AppData, subjectCode: string) {
+  return data.dailyTasks.filter((task) => task.subjectCode === subjectCode && task.lane === 'GPA' && (task.source === 'exam' || task.source === 'manual' || !task.source))
+}
+
+function buildExamTaskTitle(event: FixedEvent, subject: CurriculumSubject | undefined, stage: ExamReviewStage) {
+  const subjectLabel = `${event.subjectCode ?? event.title}${subject ? ` - ${subject.name}` : ''}`
+  const prefix: Record<ExamReviewStage, string> = {
+    read_theory: 'Ôn lý thuyết',
+    practice_core: 'Làm bài trọng tâm',
+    mock_exam: 'Làm đề tự kiểm tra',
+    ready: 'Ôn nhanh trước thi',
+  }
+  return `${prefix[stage]}: ${subjectLabel}`
+}
+
+function getExamPlanReason(event: FixedEvent, subject: CurriculumSubject | undefined, daysLeft: number, reviewStatus: ReturnType<typeof getExamReviewStatus>) {
+  const riskLabel = subject?.riskLevel === 'critical' || subject?.riskLevel === 'high' ? 'môn nền đang rủi ro' : subject?.riskLevel === 'watch' ? 'môn cần theo dõi' : 'môn có thể kéo GPA'
+  if (daysLeft <= 1) return `Thi rất gần, ưu tiên hoàn tất bước còn thiếu. ${event.note ?? ''}`.trim()
+  if (daysLeft <= 4 && reviewStatus !== 'Ổn') return `${riskLabel}; còn ít ngày nên cần có ít nhất một phiên Focus hôm nay.`
+  if (reviewStatus === 'Ổn') return 'Đã có tín hiệu ôn xong, chỉ cần giữ nhịp ôn nhanh trước ngày thi.'
+  return `${riskLabel}; nên xử lý sớm để không dồn sát ngày thi.`
+}
+
 function createDailyTask(task: Omit<DailyTask, 'id' | 'done' | 'createdAt'> & Partial<Pick<DailyTask, 'id' | 'done' | 'createdAt'>>): DailyTask {
   return {
     ...task,
@@ -5167,17 +5304,19 @@ function getDailyTaskPriority(task: DailyTask, data: AppData, exams: FixedEvent[
   return sourceScore + laneScore + riskScore + examScore + dueScore
 }
 
-function getExamReviewStatus(event: FixedEvent, data: AppData): 'Chưa ôn' | 'Đang ôn' | 'Ổn' {
+function getExamReviewStatus(event: FixedEvent, data: AppData): 'Chưa ôn' | 'Đang ôn' | 'Cần làm đề' | 'Ổn' {
   if (!event.subjectCode) return 'Chưa ôn'
-  const tasks = data.dailyTasks.filter((task) => task.subjectCode === event.subjectCode && task.lane === 'GPA')
-  if (tasks.some((task) => task.done)) return 'Ổn'
+  const tasks = getExamReviewTasks(data, event.subjectCode)
+  if (tasks.some((task) => task.reviewStage === 'ready' && task.done)) return 'Ổn'
+  if (tasks.some((task) => task.reviewStage === 'mock_exam' && task.done)) return 'Ổn'
+  if (tasks.some((task) => task.done)) return 'Cần làm đề'
   if (tasks.length) return 'Đang ôn'
   return 'Chưa ôn'
 }
 
 function examReviewTone(status: ReturnType<typeof getExamReviewStatus>): 'default' | 'success' | 'warning' | 'danger' {
   if (status === 'Ổn') return 'success'
-  if (status === 'Đang ôn') return 'warning'
+  if (status === 'Đang ôn' || status === 'Cần làm đề') return 'warning'
   return 'danger'
 }
 
