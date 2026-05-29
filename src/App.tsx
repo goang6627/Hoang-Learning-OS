@@ -1711,6 +1711,10 @@ function DailyWorkflowOverview({
   const recommendedTasks = getRecommendedDailyTasks(data).slice(0, 4)
   const dailySummary = getDailyReviewSummary(data)
   const todayReview = data.dailyReviews.find((review) => review.date === today)
+  const recentProgress = getRecentDailyProgress(data)
+  const weeklyFocusMinutes = recentProgress.reduce((sum, item) => sum + item.focusMinutes, 0)
+  const weeklyDoneTasks = recentProgress.reduce((sum, item) => sum + item.doneTasks, 0)
+  const weeklyTotalTasks = recentProgress.reduce((sum, item) => sum + item.totalTasks, 0)
 
   const addNextExamTask = () => {
     if (!nextExam?.subjectCode) return
@@ -1854,6 +1858,45 @@ function DailyWorkflowOverview({
                 <p key={item} className="rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-300">{item}</p>
               ))}
               {!dailySummary.tomorrowSuggestions.length && <p className="text-sm text-zinc-500">Không còn việc mở. Mai bắt đầu từ lịch thi gần nhất.</p>}
+            </div>
+          </div>
+        </div>
+      </Panel>
+
+      <Panel title="Tiến độ gần đây" subtitle="7 ngày gần nhất từ Daily Review và dữ liệu hôm nay">
+        <div className="grid gap-4 xl:grid-cols-[0.85fr_1.15fr]">
+          <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
+            <MetricCard icon={CheckCircle2} label="Task 7 ngày" value={`${weeklyDoneTasks}/${weeklyTotalTasks}`} helper={`${weeklyTotalTasks ? Math.round((weeklyDoneTasks / weeklyTotalTasks) * 100) : 0}% hoàn thành`} />
+            <MetricCard icon={Target} label="Focus 7 ngày" value={`${weeklyFocusMinutes}p`} helper="tổng phút đã ghi nhận" />
+            <MetricCard icon={BookOpen} label="Ngày có học" value={recentProgress.filter((item) => item.focusMinutes > 0 || item.doneTasks > 0).length} helper="trong 7 ngày gần nhất" />
+          </div>
+          <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-4">
+            <div className="grid min-h-44 grid-cols-7 items-end gap-2">
+              {recentProgress.map((item) => (
+                <div key={item.date} className="flex min-w-0 flex-col items-center gap-2">
+                  <div className="flex h-28 w-full items-end rounded-md bg-zinc-900 p-1">
+                    <div
+                      className={`w-full rounded-sm ${item.doneTasks || item.focusMinutes ? 'bg-cyan-400' : 'bg-zinc-700'}`}
+                      style={{ height: `${Math.max(8, Math.min(100, item.completionPercent || Math.min(100, item.focusMinutes * 2)))}%` }}
+                      title={`${formatShortDate(item.date)}: ${item.doneTasks}/${item.totalTasks} task, ${item.focusMinutes} phút`}
+                    />
+                  </div>
+                  <p className="text-xs text-zinc-500">{formatShortDate(item.date)}</p>
+                  <p className="text-xs font-medium text-zinc-300">{item.doneTasks}/{item.totalTasks}</p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 grid gap-2 md:grid-cols-2">
+              {recentProgress.slice().reverse().slice(0, 4).map((item) => (
+                <div key={`detail-${item.date}`} className="rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge>{formatShortDate(item.date)}</Badge>
+                    <Badge>{item.focusMinutes} phút</Badge>
+                    <Badge>{item.carryOverCount} nợ</Badge>
+                  </div>
+                  <p className="mt-2 truncate text-sm text-zinc-300">{item.subjects.join(', ') || 'Chưa ghi môn học'}</p>
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -2133,6 +2176,7 @@ function LearningPathOverview({
   const selectedGroupNames = data.requirementGroups
     .filter((group) => data.academicProfile.selectedSpecializationGroupIds.includes(group.id))
     .map((group) => group.name)
+  const activitySignals = getSubjectReviewSignals(data, uniqueSubjects([...semesterSubjects, ...riskSubjects]))
 
   const addSubjectTask = (subject: CurriculumSubject) => {
     onUpdateTasks(addUniqueDailyTask(data.dailyTasks, {
@@ -2204,6 +2248,48 @@ function LearningPathOverview({
           </div>
         </Panel>
       </div>
+
+      <Panel title="Tín hiệu ôn tập từ Daily Review" subtitle="Môn nào được đụng tới gần đây và môn nào đang bị bỏ quên">
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="rounded-lg border border-emerald-400/25 bg-emerald-400/10 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <p className="font-semibold text-white">Đã ôn gần đây</p>
+              <Badge tone="success">{activitySignals.recent.length} môn</Badge>
+            </div>
+            <div className="mt-3 grid gap-2">
+              {activitySignals.recent.map((item) => (
+                <button key={item.code} type="button" className="rounded-md border border-emerald-400/20 bg-zinc-950 px-3 py-2 text-left hover:border-emerald-300" onClick={() => onOpenSubject(item.code)}>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge tone="success">{item.code}</Badge>
+                    <Badge>{formatShortDate(item.lastDate)}</Badge>
+                  </div>
+                  <p className="mt-1 truncate text-sm text-zinc-300">{item.name}</p>
+                </button>
+              ))}
+              {!activitySignals.recent.length && <p className="text-sm text-zinc-500">Chưa có Daily Review nào ghi môn đã học.</p>}
+            </div>
+          </div>
+          <div className="rounded-lg border border-amber-400/25 bg-amber-400/10 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <p className="font-semibold text-white">Bị bỏ quên</p>
+              <Badge tone="warning">{activitySignals.forgotten.length} môn</Badge>
+            </div>
+            <div className="mt-3 grid gap-2">
+              {activitySignals.forgotten.map((subject) => (
+                <button key={subject.code} type="button" className="rounded-md border border-amber-400/20 bg-zinc-950 px-3 py-2 text-left hover:border-amber-300" onClick={() => addSubjectTask(subject)}>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge tone={riskTone(subject.riskLevel)}>{subject.code}</Badge>
+                    <Badge>{subject.riskLevel}</Badge>
+                    <Badge>{subject.credits} TC</Badge>
+                  </div>
+                  <p className="mt-1 truncate text-sm text-zinc-300">{subject.name}</p>
+                </button>
+              ))}
+              {!activitySignals.forgotten.length && <p className="text-sm text-zinc-500">Các môn ưu tiên đều có tín hiệu ôn gần đây.</p>}
+            </div>
+          </div>
+        </div>
+      </Panel>
     </div>
   )
 }
@@ -4655,6 +4741,16 @@ function getLocalDateKey(date: Date) {
   return `${year}-${month}-${day}`
 }
 
+function parseLocalDateKey(dateKey: string) {
+  return new Date(`${dateKey}T00:00:00`)
+}
+
+function addDays(date: Date, days: number) {
+  const nextDate = new Date(date)
+  nextDate.setDate(nextDate.getDate() + days)
+  return nextDate
+}
+
 function formatFixedEventTiming(event: FixedEvent) {
   const dateLabel = event.date ? formatDate(event.date) : getWeekDayLabel(event.dayOfWeek)
   return `${dateLabel} ${event.startTime}-${event.endTime}`
@@ -4742,6 +4838,59 @@ function getDailyReviewSummary(data: AppData) {
     carryOverTasks,
     tomorrowSuggestions,
   }
+}
+
+function getRecentDailyProgress(data: AppData, days = 7) {
+  const reviewsByDate = new globalThis.Map(data.dailyReviews.map((review) => [review.date, review]))
+  const todayDate = parseLocalDateKey(today)
+  const currentSummary = getDailyReviewSummary(data)
+  return Array.from({ length: days }, (_, index) => {
+    const date = addDays(todayDate, index - days + 1)
+    const dateKey = getLocalDateKey(date)
+    const review = reviewsByDate.get(dateKey)
+    const doneTasks = review?.doneTasks ?? (dateKey === today ? currentSummary.doneTasks : 0)
+    const totalTasks = review?.totalTasks ?? (dateKey === today ? currentSummary.totalTasks : 0)
+    const focusMinutes = review?.focusMinutes ?? (dateKey === today ? currentSummary.focusMinutes : 0)
+    const subjects = review?.subjects ?? (dateKey === today ? currentSummary.subjects : [])
+    const carryOverCount = review?.carryOverTasks.length ?? (dateKey === today ? currentSummary.carryOverTasks.length : 0)
+    return {
+      date: dateKey,
+      doneTasks,
+      totalTasks,
+      focusMinutes,
+      subjects,
+      carryOverCount,
+      completionPercent: totalTasks ? Math.round((doneTasks / totalTasks) * 100) : 0,
+    }
+  })
+}
+
+function getSubjectReviewSignals(data: AppData, subjects: CurriculumSubject[]) {
+  const recentByCode = new globalThis.Map<string, string>()
+  getRecentDailyProgress(data).forEach((review) => {
+    review.subjects.forEach((subjectCode) => {
+      recentByCode.set(subjectCode, review.date)
+    })
+  })
+  const recent = Array.from(recentByCode.entries())
+    .map(([code, lastDate]) => {
+      const subject = data.curriculumSubjects.find((item) => item.code === code)
+      return subject ? { code, name: subject.name, lastDate } : null
+    })
+    .filter((item): item is { code: string; name: string; lastDate: string } => Boolean(item))
+    .sort((a, b) => b.lastDate.localeCompare(a.lastDate))
+    .slice(0, 6)
+  const forgotten = subjects
+    .filter((subject) => !recentByCode.has(subject.code))
+    .sort((a, b) => getPriorityScore(b) - getPriorityScore(a))
+    .slice(0, 6)
+  return { recent, forgotten }
+}
+
+function uniqueSubjects(subjects: CurriculumSubject[]) {
+  const byCode = new globalThis.Map<string, CurriculumSubject>()
+  subjects.forEach((subject) => byCode.set(subject.code, subject))
+  return Array.from(byCode.values())
 }
 
 function createDailyReview(data: AppData): DailyReview {
@@ -4927,6 +5076,10 @@ function getWeekStart(date: Date) {
 
 function formatDate(date: string) {
   return new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(date))
+}
+
+function formatShortDate(date: string) {
+  return new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit' }).format(new Date(date))
 }
 
 function clampNumber(value: number, min: number, max: number) {
