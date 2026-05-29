@@ -238,6 +238,9 @@ type DailyReview = {
 
 type AppSettings = {
   showPlaceholderPages: boolean
+  lastBackupAt?: string
+  lastBackupFileName?: string
+  lastImportAt?: string
 }
 
 type AppData = {
@@ -256,6 +259,32 @@ type AppData = {
   weeklyReviews: WeeklyReview[]
   dailyReviews: DailyReview[]
   settings: AppSettings
+}
+
+type BackupPayload = {
+  schema: 'hoang-learning-os-backup'
+  appName: 'Hoang Learning OS'
+  dataVersion: string
+  exportedAt: string
+  data: AppData
+}
+
+type BackupSummary = {
+  dailyTasks: number
+  dailyReviews: number
+  cpProblems: number
+  projects: number
+  subjects: number
+  fixedEvents: number
+}
+
+type PendingImport = {
+  fileName: string
+  source: 'backup' | 'legacy'
+  dataVersion?: string
+  exportedAt?: string
+  data: AppData
+  summary: BackupSummary
 }
 
 type Page = 'dashboard' | 'learningPath' | 'exams' | 'study' | 'gpa' | 'roadmap' | 'recovery' | 'semester' | 'weekly' | 'settings' | 'daily' | 'weeklyPlan' | 'cp' | 'project' | 'resources'
@@ -649,6 +678,9 @@ function App() {
     setData({ ...data, resources })
     notify('Resource Hub updated')
   }
+  const updateSettings = (settings: AppSettings) => {
+    setData({ ...data, settings })
+  }
   const updateSemesterPlans = (semesterPlans: SemesterPlan[]) => {
     setData({ ...data, semesterPlans })
     notify('Semester Planner updated')
@@ -778,7 +810,7 @@ function App() {
             {activePage === 'recovery' && <GpaRecoveryMap data={data} stats={stats} onOpenSubject={openSubject} />}
             {activePage === 'semester' && <EditableSemesterPlanner data={data} onUpdateSemesterPlans={updateSemesterPlans} onUpdateTasks={updateTasks} onOpenSubject={openSubject} />}
             {activePage === 'weekly' && <WeeklyReviewPage data={data} onSaveReview={saveWeeklyReview} />}
-            {activePage === 'settings' && <SettingsPage data={data} onUpdateProfile={updateProfile} onReplaceData={replaceData} onResetData={resetData} />}
+            {activePage === 'settings' && <SettingsPage data={data} onUpdateProfile={updateProfile} onUpdateSettings={updateSettings} onReplaceData={replaceData} onResetData={resetData} />}
             {activePage === 'daily' && <DailyPlanner data={data} onUpdateTasks={updateTasks} onUpdateStudySessions={updateStudySessions} onUpdateStudyBlocks={updateWeeklyStudyBlocks} onUpdateDailyExecution={updateDailyExecution} onStartFocus={setFocusTarget} onOpenSubject={openSubject} />}
             {activePage === 'weeklyPlan' && <WeeklyPlanPage data={data} onUpdateFixedEvents={updateWeeklyFixedEvents} onUpdateStudyBlocks={updateWeeklyStudyBlocks} onUpdateTasks={updateTasks} onStartFocus={setFocusTarget} onOpenSubject={openSubject} />}
             {activePage === 'cp' && <CpTracker data={data} onUpdateCpProblems={updateCpProblems} onUpdateTasks={updateTasks} onStartFocus={setFocusTarget} />}
@@ -1350,17 +1382,28 @@ function normalizeData(value: Partial<AppData>): AppData {
     curriculumSubjects: Array.isArray(value.curriculumSubjects) && value.curriculumSubjects.some((subject) => subject.code === 'TOA1012') ? value.curriculumSubjects : curriculumSubjectsSeed,
     requirementGroups: Array.isArray(value.requirementGroups) && value.requirementGroups.length ? value.requirementGroups : requirementGroupsSeed,
     semesterPlans: normalizeSemesterPlans(Array.isArray(value.semesterPlans) && value.semesterPlans.length ? value.semesterPlans : semesterPlansSeed),
-    dailyTasks: Array.isArray(value.dailyTasks) && value.dailyTasks.length ? value.dailyTasks : dailyTasksSeed,
+    dailyTasks: Array.isArray(value.dailyTasks) ? value.dailyTasks : dailyTasksSeed,
     studySessions: Array.isArray(value.studySessions) ? value.studySessions : studySessionsSeed,
     weeklyFixedEvents: Array.isArray(value.weeklyFixedEvents) ? value.weeklyFixedEvents : weeklyFixedEventsSeed,
     weeklyStudyBlocks: Array.isArray(value.weeklyStudyBlocks) ? value.weeklyStudyBlocks : weeklyStudyBlocksSeed,
     pomodoroSessions: Array.isArray(value.pomodoroSessions) ? value.pomodoroSessions : pomodoroSessionsSeed,
-    cpProblems: Array.isArray(value.cpProblems) && value.cpProblems.length ? value.cpProblems : cpProblemsSeed,
-    projects: Array.isArray(value.projects) && value.projects.length ? value.projects : projectsSeed,
-    resources: Array.isArray(value.resources) && value.resources.length ? value.resources : resourcesSeed,
+    cpProblems: Array.isArray(value.cpProblems) ? value.cpProblems : cpProblemsSeed,
+    projects: Array.isArray(value.projects) ? value.projects : projectsSeed,
+    resources: Array.isArray(value.resources) ? value.resources : resourcesSeed,
     weeklyReviews: Array.isArray(value.weeklyReviews) ? value.weeklyReviews : [],
     dailyReviews: Array.isArray(value.dailyReviews) ? value.dailyReviews : [],
-    settings: value.settings && typeof value.settings.showPlaceholderPages === 'boolean' ? value.settings : settingsSeed,
+    settings: normalizeSettings(value.settings),
+  }
+}
+
+function normalizeSettings(value: unknown): AppSettings {
+  if (!value || typeof value !== 'object') return settingsSeed
+  const candidate = value as Partial<AppSettings>
+  return {
+    showPlaceholderPages: typeof candidate.showPlaceholderPages === 'boolean' ? candidate.showPlaceholderPages : settingsSeed.showPlaceholderPages,
+    lastBackupAt: typeof candidate.lastBackupAt === 'string' ? candidate.lastBackupAt : undefined,
+    lastBackupFileName: typeof candidate.lastBackupFileName === 'string' ? candidate.lastBackupFileName : undefined,
+    lastImportAt: typeof candidate.lastImportAt === 'string' ? candidate.lastImportAt : undefined,
   }
 }
 
@@ -4273,16 +4316,25 @@ function WeeklyReviewPage({ data, onSaveReview }: { data: AppData; onSaveReview:
 function SettingsPage({
   data,
   onUpdateProfile,
+  onUpdateSettings,
   onReplaceData,
   onResetData,
 }: {
   data: AppData
   onUpdateProfile: (profile: AcademicProfile) => void
+  onUpdateSettings: (settings: AppSettings) => void
   onReplaceData: (data: AppData) => void
   onResetData: () => void
 }) {
   const [message, setMessage] = useState('')
+  const [pendingImport, setPendingImport] = useState<PendingImport | null>(null)
+  const [resetArmed, setResetArmed] = useState(false)
   const profile = data.academicProfile
+  const backupSummary = useMemo(() => buildBackupSummary(data), [data])
+  const backupIsStale = isBackupStale(data.settings.lastBackupAt)
+  const backupStatus = data.settings.lastBackupAt
+    ? `Backup gần nhất: ${formatDateTime(data.settings.lastBackupAt)}${data.settings.lastBackupFileName ? ` · ${data.settings.lastBackupFileName}` : ''}`
+    : 'Chưa từng backup dữ liệu trên trình duyệt này.'
 
   const updateTarget = (key: 'targetShortTermGPA4' | 'targetScholarshipGPA4' | 'targetExcellentGPA4', value: string) => {
     onUpdateProfile({ ...profile, [key]: clampNumber(Number(value), 0, 4) })
@@ -4295,32 +4347,80 @@ function SettingsPage({
   }
 
   const exportData = () => {
-    const payload = JSON.stringify(data, null, 2)
-    const blob = new Blob([payload], { type: 'application/json' })
+    const exportedAt = new Date().toISOString()
+    const fileName = `hoang-learning-os-backup-${today}.json`
+    const nextSettings = {
+      ...data.settings,
+      lastBackupAt: exportedAt,
+      lastBackupFileName: fileName,
+    }
+    const backupData = { ...data, settings: nextSettings }
+    const payload: BackupPayload = {
+      schema: 'hoang-learning-os-backup',
+      appName: 'Hoang Learning OS',
+      dataVersion: DATA_VERSION,
+      exportedAt,
+      data: backupData,
+    }
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `hoang-learning-os-v3-${today}.json`
+    link.download = fileName
     link.click()
     URL.revokeObjectURL(url)
-    setMessage('Export JSON đã tạo file backup.')
+    onUpdateSettings(nextSettings)
+    setMessage('Đã tạo file backup JSON có metadata.')
+    setPendingImport(null)
+    setResetArmed(false)
   }
 
   const importData = async (file: File | undefined) => {
     if (!file) return
     try {
-      const parsed = JSON.parse(await file.text()) as Partial<AppData>
-      const nextData = normalizeData(parsed)
-      onReplaceData(nextData)
-      setMessage('Import thành công. Dữ liệu đã được lưu vào localStorage.')
+      const parsed = JSON.parse(await file.text()) as unknown
+      const backup = parseBackupPayload(parsed)
+      if (!backup) throw new Error('Invalid backup')
+      setPendingImport({
+        fileName: file.name,
+        source: backup.source,
+        dataVersion: backup.dataVersion,
+        exportedAt: backup.exportedAt,
+        data: backup.data,
+        summary: buildBackupSummary(backup.data),
+      })
+      setMessage('Đã đọc file backup. Kiểm tra preview rồi xác nhận khôi phục.')
+      setResetArmed(false)
     } catch {
+      setPendingImport(null)
       setMessage('Import thất bại. File cần là JSON backup hợp lệ.')
     }
   }
 
+  const confirmImport = () => {
+    if (!pendingImport) return
+    onReplaceData({
+      ...pendingImport.data,
+      settings: {
+        ...pendingImport.data.settings,
+        lastImportAt: new Date().toISOString(),
+      },
+    })
+    setMessage('Khôi phục thành công. Dữ liệu đã được lưu vào localStorage.')
+    setPendingImport(null)
+    setResetArmed(false)
+  }
+
   const reset = () => {
+    if (!resetArmed) {
+      setResetArmed(true)
+      setPendingImport(null)
+      setMessage('Bấm lại "Xác nhận reset" để xóa dữ liệu hiện tại và quay về dữ liệu gốc 2025-2026.2.')
+      return
+    }
     onResetData()
-    setMessage('Đã reset về seed data v5.')
+    setResetArmed(false)
+    setMessage('Đã reset về dữ liệu gốc 2025-2026.2.')
   }
 
   return (
@@ -4348,26 +4448,151 @@ function SettingsPage({
         </div>
       </Panel>
 
-      <Panel title="Sao lưu / Khôi phục" subtitle="Import, export hoặc reset dữ liệu localStorage">
-        <div className="flex flex-wrap gap-3">
+      <Panel title="Sao lưu dữ liệu cá nhân" subtitle="Dữ liệu lưu local-first trong trình duyệt, backup bằng file JSON">
+        <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+          <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone="success">localStorage</Badge>
+              <Badge>Vercel chỉ host app</Badge>
+            </div>
+            <p className="mt-3 text-sm leading-6 text-zinc-300">
+              Dữ liệu học tập của bạn đang lưu trong localStorage của trình duyệt hiện tại. Nếu đổi máy, đổi trình duyệt, xóa cache hoặc dùng tab ẩn danh, dữ liệu có thể không đi theo. Vercel không lưu dữ liệu cá nhân của bạn.
+            </p>
+            <div className={`mt-4 rounded-lg border p-3 text-sm ${backupIsStale ? 'border-amber-400/30 bg-amber-400/10 text-amber-100' : 'border-emerald-400/30 bg-emerald-400/10 text-emerald-100'}`}>
+              {backupStatus}
+              {data.settings.lastImportAt && <span className="mt-1 block">Import gần nhất: {formatDateTime(data.settings.lastImportAt)}</span>}
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <BackupStat label="Task hôm nay" value={backupSummary.dailyTasks} />
+            <BackupStat label="Daily Review" value={backupSummary.dailyReviews} />
+            <BackupStat label="Bài CP" value={backupSummary.cpProblems} />
+            <BackupStat label="Project" value={backupSummary.projects} />
+            <BackupStat label="Môn học" value={backupSummary.subjects} />
+            <BackupStat label="Lịch cố định" value={backupSummary.fixedEvents} />
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-3">
           <button type="button" className="btn-primary" onClick={exportData}>
             <Download className="h-4 w-4" />
-            Export JSON
+            Tải backup JSON
           </button>
           <label className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-2 text-sm font-semibold text-zinc-100 hover:border-cyan-400/60">
             <Upload className="h-4 w-4" />
-            Import JSON
-            <input className="hidden" type="file" accept="application/json,.json" onChange={(event) => void importData(event.target.files?.[0])} />
+            Khôi phục từ JSON
+            <input
+              className="hidden"
+              type="file"
+              accept="application/json,.json"
+              onChange={(event) => {
+                void importData(event.target.files?.[0])
+                event.currentTarget.value = ''
+              }}
+            />
           </label>
           <button type="button" className="flex min-h-11 items-center gap-2 rounded-lg border border-red-400/40 bg-red-400/10 px-4 py-2 text-sm font-semibold text-red-100" onClick={reset}>
             <RotateCcw className="h-4 w-4" />
-            Reset dữ liệu mẫu
+            {resetArmed ? 'Xác nhận reset' : 'Reset về dữ liệu gốc'}
           </button>
         </div>
+
+        {pendingImport && (
+          <div className="mt-4 rounded-lg border border-cyan-400/30 bg-cyan-400/10 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="font-semibold text-white">Preview file khôi phục</p>
+                <p className="mt-1 text-sm text-cyan-100">
+                  {pendingImport.fileName} · {pendingImport.source === 'backup' ? 'Backup mới' : 'Backup cũ'}{pendingImport.dataVersion ? ` · ${pendingImport.dataVersion}` : ''}{pendingImport.exportedAt ? ` · ${formatDateTime(pendingImport.exportedAt)}` : ''}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className="btn-primary" onClick={confirmImport}>Xác nhận khôi phục</button>
+                <button type="button" className="icon-btn px-3" onClick={() => setPendingImport(null)}>Hủy</button>
+              </div>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <BackupStat label="Task" value={pendingImport.summary.dailyTasks} />
+              <BackupStat label="Review" value={pendingImport.summary.dailyReviews} />
+              <BackupStat label="CP" value={pendingImport.summary.cpProblems} />
+              <BackupStat label="Project" value={pendingImport.summary.projects} />
+              <BackupStat label="Môn" value={pendingImport.summary.subjects} />
+              <BackupStat label="Lịch" value={pendingImport.summary.fixedEvents} />
+            </div>
+          </div>
+        )}
+
         {message && <p className="mt-4 rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-sm text-zinc-300">{message}</p>}
       </Panel>
     </div>
   )
+}
+
+function BackupStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-3">
+      <p className="text-xs text-zinc-500">{label}</p>
+      <p className="mt-1 text-xl font-semibold text-white">{value}</p>
+    </div>
+  )
+}
+
+function buildBackupSummary(data: AppData): BackupSummary {
+  return {
+    dailyTasks: data.dailyTasks.length,
+    dailyReviews: data.dailyReviews.length,
+    cpProblems: data.cpProblems.length,
+    projects: data.projects.length,
+    subjects: data.curriculumSubjects.length,
+    fixedEvents: data.weeklyFixedEvents.length,
+  }
+}
+
+function parseBackupPayload(value: unknown): Omit<PendingImport, 'fileName' | 'summary'> | null {
+  if (!isRecord(value)) return null
+  if (
+    value.schema === 'hoang-learning-os-backup'
+    && value.appName === 'Hoang Learning OS'
+    && isRecord(value.data)
+  ) {
+    return {
+      source: 'backup',
+      dataVersion: typeof value.dataVersion === 'string' ? value.dataVersion : undefined,
+      exportedAt: typeof value.exportedAt === 'string' ? value.exportedAt : undefined,
+      data: normalizeData(value.data as Partial<AppData>),
+    }
+  }
+  if ('academicProfile' in value || 'curriculumSubjects' in value || 'dailyTasks' in value) {
+    return {
+      source: 'legacy',
+      data: normalizeData(value as Partial<AppData>),
+    }
+  }
+  return null
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isBackupStale(lastBackupAt?: string) {
+  if (!lastBackupAt) return true
+  const backupDate = new Date(lastBackupAt)
+  if (Number.isNaN(backupDate.getTime())) return true
+  return Date.now() - backupDate.getTime() > 7 * 24 * 60 * 60 * 1000
+}
+
+function formatDateTime(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
 }
 
 function Brand({ profile }: { profile: AcademicProfile }) {
